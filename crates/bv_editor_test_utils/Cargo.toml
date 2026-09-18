@@ -10,4 +10,4 @@ description = "Headless test harness for bv-editor: build an App with no window,
 # (e.g. as a dev-dependency of a crate that doesn't itself pull in a full
 # `bevy` with default features, such as `third_party_extension`), it must not
 # rely on some sibling crate in the same build unifying these features in.
-bevy = { workspace = true, features = ["keyboard", "mouse"] }
+bevy = { workspace = true, features = ["keyboard", "mouse", "bevy_state"] }

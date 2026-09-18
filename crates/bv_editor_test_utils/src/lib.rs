@@ -6,7 +6,7 @@
 //! run with no window and no GPU, and gives phases a couple of standard ways
 //! to advance time and fake input:
 //!
-//! - [`headless_app`] — an `App` with `MinimalPlugins` + `InputPlugin`, no window.
+//! - [`headless_app`] — an `App` with `MinimalPlugins` + `InputPlugin` + `StatesPlugin`, no window.
 //! - [`step`] — call `App::update()` a fixed number of times.
 //! - [`simulate_click`] — press the left mouse button and record a world-space position.
 //! - [`simulate_key`] — press a keyboard key.
@@ -21,14 +21,19 @@ use bevy::app::App;
 use bevy::ecs::resource::Resource;
 use bevy::input::{ButtonInput, InputPlugin, keyboard::KeyCode, mouse::MouseButton};
 use bevy::math::Vec2;
+use bevy::state::app::StatesPlugin;
 use bevy::MinimalPlugins;
 
-/// Build an `App` with `MinimalPlugins` + `InputPlugin` and no window — safe
-/// to run in CI without a GPU or a display.
+/// Build an `App` with `MinimalPlugins` + `InputPlugin` + `StatesPlugin` and no
+/// window — safe to run in CI without a GPU or a display. `StatesPlugin` is
+/// included because `EditorState` (`bv_editor_core`) and every state-gated
+/// system after it need the `StateTransition` schedule to exist, and
+/// `MinimalPlugins` alone does not provide it.
 pub fn headless_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(InputPlugin);
+    app.add_plugins(StatesPlugin);
     app
 }
 

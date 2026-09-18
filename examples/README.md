@@ -16,13 +16,21 @@
 cargo run -p minimal_game
 ```
 
-สิ่งที่ควรเห็น: หน้าต่าง Bevy เปิดขึ้นมา มี cube สีแดงกับแสง ไม่ crash และใน
-console จะมี log บอกว่า plugin โหลดสำเร็จ:
+สิ่งที่ควรเห็น: หน้าต่าง Bevy เปิดขึ้นมา ไม่ crash และใน console จะมี log บอกว่า
+plugin โหลดสำเร็จ:
 
 ```
 INFO bv_editor_core: bv_editor_core: EditorCorePlugin loaded
 INFO bv_editor: bv_editor: EditorPlugin loaded successfully
 ```
+
+ตั้งแต่ Phase 1 เป็นต้นไป `EditorPlugin` จะ spawn shell layout ของ editor
+(`bv_editor_ui`) เต็มหน้าต่างทับฉาก 3D ของเกมไว้ — เห็นกล่อง Toolbar บนสุด,
+Scene Tree ซ้าย, Viewport กลาง, Components ขวา, Project Files/Console ล่าง,
+และแถบสถานะล่างสุด (ยังเป็นกล่องว่างมี title เฉยๆ ตามสโคปของ Phase 1) เพราะ
+UI วาดทับเต็มจอ จึงยังไม่เห็น cube/light ของเกมจริงจนกว่าจะถึง Phase 4 ที่
+viewport เรนเดอร์ฉาก 3D ลงมาแปะในกล่อง Viewport เอง — ลากเส้นบางๆ ระหว่างกล่อง
+(splitter) ด้วยเมาส์ซ้ายค้างเพื่อ resize แต่ละโซนได้แล้วตอนนี้
 
 ปิดหน้าต่างตามปกติ (กด X หรือ Alt+F4) เพื่อออกจากโปรแกรม
 

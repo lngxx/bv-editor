@@ -6,3 +6,14 @@ license.workspace = true
 description = "Docking/shell framework on bevy_ui: splitter, tab bar, tree widget, property grid."
 
 [dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_input = { workspace = true, features = ["mouse"] }
+bevy_window = { workspace = true }
+bevy_ui = { workspace = true }
+bevy_text = { workspace = true }
+bevy_color = { workspace = true }
+bevy_math = { workspace = true }
+
+[dev-dependencies]
+bv_editor_test_utils = { workspace = true }

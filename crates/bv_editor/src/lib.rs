@@ -10,9 +10,11 @@
 //! docs/DESIGN.md sections 2 and 5) — this crate has no special access that a
 //! `cargo add`-ed extension crate wouldn't also have.
 //!
-//! Phase 0: [`EditorPlugin`] only composes [`EditorCorePlugin`] and logs that
-//! it loaded. `EditorUiPlugin`, the built-in panels, gizmos, and the viewport
-//! are added here as their phases land.
+//! Phase 0 gave [`EditorPlugin`] just [`EditorCorePlugin`] and a log line.
+//! Phase 1 adds [`EditorUiPlugin`], which spawns the fixed shell layout (top
+//! toolbar, Scene Tree, viewport, Components, Project Files, Console, status
+//! bar) with resizable splitters between zones. The built-in panels, gizmos,
+//! and the viewport itself are still empty crates and land in later phases.
 
 use bevy::app::{App, Plugin};
 use bevy::log::info;
@@ -31,17 +33,19 @@ pub use bv_editor_gizmos_builtin as gizmos_builtin;
 pub use bv_editor_viewport as viewport;
 
 pub use bv_editor_core::EditorCorePlugin;
+pub use bv_editor_ui::EditorUiPlugin;
 
 /// The single plugin a host game adds to embed bv-editor.
 ///
-/// Phase 0: composes [`EditorCorePlugin`] and logs successful load; that's
-/// the entire Phase 0 milestone (docs/DESIGN.md section 9, "Phase 0").
+/// Composes [`EditorCorePlugin`] (state, `HotkeyRegistry`) and
+/// [`EditorUiPlugin`] (the shell layout) and logs successful load.
 #[derive(Default)]
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EditorCorePlugin);
+        app.add_plugins(EditorUiPlugin);
         info!("bv_editor: EditorPlugin loaded successfully");
     }
 }
