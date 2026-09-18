@@ -39,14 +39,32 @@ use bevy_transform::components::Transform;
 use bevy_ui::prelude::*;
 
 use bv_editor_core::{EditorOnly, EditorState, HotkeyAppExt, HotkeyDescriptor, Selection};
-use bv_editor_ui::{DragDropped, DragPayload, DragSource, DropTarget, ScenePanelSlot};
+use bv_editor_ui::{DragDropped, DragPayload, DragSource, DropTarget, ScenePanelSlot, ScrollbarThumb};
 
 const ROW_INDENT_PX: f32 = 16.0;
 const ROW_HEIGHT_PX: f32 = 22.0;
 const ROW_BACKGROUND: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
+const ROW_HOVER_BACKGROUND: Color = Color::srgb(0.22, 0.22, 0.26);
 const ROW_SELECTED_BACKGROUND: Color = Color::srgb(0.24, 0.35, 0.55);
 const TOOLBAR_BUTTON_BACKGROUND: Color = Color::srgb(0.22, 0.22, 0.25);
 const TEXT_COLOR: Color = Color::srgb(0.85, 0.85, 0.85);
+const SCROLLBAR_TRACK_WIDTH_PX: f32 = 8.0;
+const SCROLLBAR_TRACK_BACKGROUND: Color = Color::srgb(0.12, 0.12, 0.13);
+const SCROLLBAR_THUMB_BACKGROUND: Color = Color::srgb(0.35, 0.35, 0.4);
+
+/// Pure color-priority logic for a row's background (docs/UI_FEATURES.md F1):
+/// selected beats hovered beats the plain, transparent default — no ECS
+/// involved, so the priority order itself is unit-testable without a
+/// running `App`.
+fn row_background(selected: bool, hovered: bool) -> Color {
+    if selected {
+        ROW_SELECTED_BACKGROUND
+    } else if hovered {
+        ROW_HOVER_BACKGROUND
+    } else {
+        ROW_BACKGROUND
+    }
+}
 
 /// Forces a rebuild of the tree's UI rows on the next [`rebuild_scene_tree_ui`]
 /// run. Starts `true` so the initial (possibly already-populated) hierarchy
@@ -93,6 +111,13 @@ impl Plugin for ScenePanelPlugin {
         if !app.is_plugin_added::<bv_editor_ui::DragAndDropPlugin>() {
             app.add_plugins(bv_editor_ui::DragAndDropPlugin);
         }
+        // Same reasoning as the `DragAndDropPlugin` guard above: this
+        // panel's own tests spawn a bare `ScenePanelSlot` without the full
+        // `EditorUiPlugin`, so the Scene Tree scrollbar (docs/UI_FEATURES.md
+        // F2) needs its driving systems here too.
+        if !app.is_plugin_added::<bv_editor_ui::ScrollbarPlugin>() {
+            app.add_plugins(bv_editor_ui::ScrollbarPlugin);
+        }
         app.init_resource::<SceneTreeDirty>();
         app.register_hotkey(HotkeyDescriptor {
             id: "scene_panel.delete_entity",
@@ -113,6 +138,7 @@ impl Plugin for ScenePanelPlugin {
                 handle_delete_selected,
                 handle_drag_reparent,
                 rebuild_scene_tree_ui,
+                sync_row_highlight,
             )
                 .chain()
                 // `handle_drag_reparent` reads `DragDropped`, which
@@ -133,6 +159,17 @@ fn button(label: &'static str) -> impl Bundle {
     )
 }
 
+/// Builds the Scene Tree's chrome: the Add/Delete toolbar, then a row
+/// holding [`SceneTreeRowsContainer`] (clipped + scrollable,
+/// docs/UI_FEATURES.md F2) next to its scrollbar track/thumb.
+///
+/// `SceneTreeRowsContainer` gets `flex_grow: 1.0` + `min_height: Val::Px(0.0)`
+/// so it actually fills (and is bounded by) the remaining vertical space in
+/// the panel instead of growing to fit its content — without a bound,
+/// `Overflow::scroll_y()` has nothing to clip against and rows just spill
+/// out past the panel like before F2. `min_height: 0.0` overrides flexbox's
+/// default `min-height: auto` (content-based), which would otherwise refuse
+/// to shrink the container below its rows' total height in the first place.
 fn spawn_scene_panel_chrome(mut commands: Commands, slots: Query<Entity, With<ScenePanelSlot>>) {
     let Ok(slot) = slots.single() else { return };
 
@@ -143,12 +180,45 @@ fn spawn_scene_panel_chrome(mut commands: Commands, slots: Query<Entity, With<Sc
                 toolbar.spawn((AddEntityButton, button("+ Add Entity")));
                 toolbar.spawn((DeleteSelectedButton, button("Delete")));
             });
-
-        panel.spawn((
-            SceneTreeRowsContainer,
-            Node { flex_direction: FlexDirection::Column, margin: UiRect::top(Val::Px(4.0)), ..Default::default() },
-        ));
     });
+
+    let scroll_row = commands
+        .spawn((
+            Node { flex_direction: FlexDirection::Row, flex_grow: 1.0, min_height: Val::Px(0.0), margin: UiRect::top(Val::Px(4.0)), ..Default::default() },
+            ChildOf(slot),
+        ))
+        .id();
+
+    let rows_container = commands
+        .spawn((
+            SceneTreeRowsContainer,
+            Interaction::default(),
+            Node {
+                flex_direction: FlexDirection::Column,
+                flex_grow: 1.0,
+                min_height: Val::Px(0.0),
+                overflow: Overflow::scroll_y(),
+                ..Default::default()
+            },
+            ChildOf(scroll_row),
+        ))
+        .id();
+
+    let track = commands
+        .spawn((
+            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
+            BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
+            ChildOf(scroll_row),
+        ))
+        .id();
+
+    commands.spawn((
+        ScrollbarThumb { target: rows_container },
+        Interaction::default(),
+        Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), top: Val::Px(0.0), ..Default::default() },
+        BackgroundColor(SCROLLBAR_THUMB_BACKGROUND),
+        ChildOf(track),
+    ));
 }
 
 /// Marks the tree dirty when the *host game* changes the hierarchy — a
@@ -263,7 +333,6 @@ fn rebuild_scene_tree_ui(
     containers: Query<Entity, With<SceneTreeRowsContainer>>,
     existing_rows: Query<Entity, With<SceneTreeRow>>,
     scene_rows: Query<(Entity, Option<&bevy_ecs::name::Name>, Option<&ChildOf>, Has<EditorOnly>), (With<Transform>, Without<Node>)>,
-    selection: Res<Selection>,
 ) {
     if !dirty.0 {
         return;
@@ -290,7 +359,10 @@ fn rebuild_scene_tree_ui(
 
     commands.entity(container).with_children(|rows_container| {
         for (entity, label, depth) in display_rows {
-            let background = if selection.contains(entity) { ROW_SELECTED_BACKGROUND } else { ROW_BACKGROUND };
+            // Spawned with the plain background; `sync_row_highlight` (later
+            // in the same frame's chain) sets the real color from live
+            // `Interaction`/`Selection` state so a freshly rebuilt row never
+            // shows a stale highlight.
             rows_container
                 .spawn((
                     SceneTreeRow { represents: entity },
@@ -303,13 +375,24 @@ fn rebuild_scene_tree_ui(
                         flex_direction: FlexDirection::Column,
                         ..Default::default()
                     },
-                    BackgroundColor(background),
+                    BackgroundColor(ROW_BACKGROUND),
                 ))
                 .with_children(|row| {
                     row.spawn((Text::new(label), TextColor(TEXT_COLOR)));
                 });
         }
     });
+}
+
+/// Runs every frame (not gated by [`SceneTreeDirty`]) so hover highlight
+/// tracks the live cursor even on frames where nothing else about the tree
+/// changed — docs/UI_FEATURES.md F1.
+fn sync_row_highlight(selection: Res<Selection>, mut rows: Query<(&Interaction, &SceneTreeRow, &mut BackgroundColor)>) {
+    for (interaction, row, mut background) in &mut rows {
+        let selected = selection.contains(row.represents);
+        let hovered = matches!(interaction, Interaction::Hovered | Interaction::Pressed);
+        background.0 = row_background(selected, hovered);
+    }
 }
 
 #[cfg(test)]
@@ -481,6 +564,80 @@ mod tests {
         step(&mut app, 1); // DragDropped fires; scene_panel reparents `a` under `b`
 
         assert_eq!(app.world().get::<ChildOf>(a).map(ChildOf::parent), Some(b));
+    }
+
+    #[test]
+    fn row_background_priority_selected_beats_hovered_beats_normal() {
+        assert_eq!(row_background(true, true), ROW_SELECTED_BACKGROUND);
+        assert_eq!(row_background(true, false), ROW_SELECTED_BACKGROUND);
+        assert_eq!(row_background(false, true), ROW_HOVER_BACKGROUND);
+        assert_eq!(row_background(false, false), ROW_BACKGROUND);
+    }
+
+    #[test]
+    fn hovering_an_unselected_row_highlights_it() {
+        let mut app = setup();
+        let cube = app.world_mut().spawn((Transform::default(), Name::new("Cube"))).id();
+        step(&mut app, 1);
+
+        let row = row_for(&mut app, cube);
+        app.world_mut().entity_mut(row).insert(Interaction::Hovered);
+        step(&mut app, 1);
+
+        assert_eq!(app.world().get::<BackgroundColor>(row).unwrap().0, ROW_HOVER_BACKGROUND);
+
+        app.world_mut().entity_mut(row).insert(Interaction::None);
+        step(&mut app, 1);
+
+        assert_eq!(app.world().get::<BackgroundColor>(row).unwrap().0, ROW_BACKGROUND);
+    }
+
+    #[test]
+    fn selected_row_stays_selected_color_even_when_hovered() {
+        let mut app = setup();
+        let cube = app.world_mut().spawn((Transform::default(), Name::new("Cube"))).id();
+        app.world_mut().resource_mut::<Selection>().select_only(cube);
+        step(&mut app, 1);
+
+        let row = row_for(&mut app, cube);
+        app.world_mut().entity_mut(row).insert(Interaction::Hovered);
+        step(&mut app, 1);
+
+        assert_eq!(app.world().get::<BackgroundColor>(row).unwrap().0, ROW_SELECTED_BACKGROUND);
+    }
+
+    #[test]
+    fn scrollbar_thumb_targets_the_rows_container_and_wheel_scrolls_it() {
+        use bevy_input::mouse::{MouseScrollUnit, MouseWheel};
+        use bevy_input::touch::TouchPhase;
+        use bevy_ui::ComputedNode;
+
+        let mut app = setup();
+        let rows_container = {
+            let world = app.world_mut();
+            let mut containers = world.query_filtered::<Entity, With<SceneTreeRowsContainer>>();
+            containers.single(world).expect("rows container should exist")
+        };
+        {
+            let world = app.world_mut();
+            let mut thumbs = world.query::<&ScrollbarThumb>();
+            assert!(thumbs.iter(world).any(|thumb| thumb.target == rows_container), "a scrollbar thumb targeting the rows container should exist");
+        }
+
+        // Headless tests never run `ui_layout_system` (docs/DESIGN.md section
+        // 8.1's harness is `MinimalPlugins`, no `bevy_ui::UiPlugin`), so
+        // simulate a real post-layout state directly on `ComputedNode` —
+        // `bevy_ui`'s own doc comment on the type names this exact use case.
+        app.world_mut().entity_mut(rows_container).insert((
+            Interaction::Hovered,
+            ComputedNode { size: Vec2::new(200.0, 100.0), content_size: Vec2::new(200.0, 400.0), inverse_scale_factor: 1.0, ..Default::default() },
+        ));
+        step(&mut app, 1);
+
+        app.world_mut().write_message(MouseWheel { unit: MouseScrollUnit::Pixel, x: 0.0, y: -40.0, window: Entity::PLACEHOLDER, phase: TouchPhase::Moved });
+        step(&mut app, 1);
+
+        assert_eq!(app.world().get::<bevy_ui::ScrollPosition>(rows_container).unwrap().0.y, 40.0);
     }
 
     #[test]

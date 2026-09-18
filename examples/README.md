@@ -1,8 +1,11 @@
 # Examples
 
-โฟลเดอร์นี้มี 2 crate ตัวอย่างที่ใช้ทดสอบ bv-editor ทุก phase ตามที่ระบุไว้ใน
-[docs/DESIGN.md](../docs/DESIGN.md) หัวข้อ 3 และ 9 — ทุก phase ใหม่ต้อง build
-ทับบน `minimal_game` เดิม ไม่ใช่สร้างเกมทดสอบใหม่ทุกครั้ง
+โฟลเดอร์นี้มี `minimal_game`/`third_party_extension` ที่ใช้ทดสอบ bv-editor
+ทุก phase ตามที่ระบุไว้ใน [docs/DESIGN.md](../docs/DESIGN.md) หัวข้อ 3 และ 9 —
+ทุก phase ใหม่ต้อง build ทับบน `minimal_game` เดิม ไม่ใช่สร้างเกมทดสอบใหม่ทุกครั้ง
+กับ `ui_gallery` ที่เป็นคนละวัตถุประสงค์: ไม่ใช่ game ทดสอบ phase แต่เป็น
+"ห้องแสดง widget" ไว้ดูด้วยตา/ทดสอบ UI widget เฉพาะของ bv-editor เอง ตาม
+[docs/UI_FEATURES.md](../docs/UI_FEATURES.md)
 
 รันคำสั่งทั้งหมดด้านล่างจาก root ของ workspace (`bv-editor/`)
 
@@ -39,6 +42,37 @@ viewport เรนเดอร์ฉาก 3D ลงมาแปะในกล�
 ```sh
 cargo build -p minimal_game
 ```
+
+## `ui_gallery`
+
+ไม่ใช่เกม ไม่มี gameplay logic ใดๆ — สร้างขึ้นเพื่อให้มี Scene Tree ที่มี
+หลายแถวหลายชั้น + entity ที่มี component ครอบคลุม field editor ทุกชนิดที่
+`bv_editor_reflect_ui` รู้จัก ไว้ทดสอบเฉพาะ **widget ของ bv-editor เอง**
+(ไม่ใช่ widget มาตรฐานของ Bevy) ตาม [docs/UI_FEATURES.md](../docs/UI_FEATURES.md)
+
+```sh
+cargo run -p ui_gallery
+```
+
+สิ่งที่ทดสอบได้ในนี้:
+
+- **Scene Tree row hover/selection highlight (F1)** — เอาเมาส์ชี้แถวไหนก็ได้
+  (ไม่ต้องคลิก) จะเห็นสีพื้นหลังอ่อนๆ ต่างจากแถวปกติ, คลิกเลือกแล้วสีเปลี่ยน
+  เป็นสีเข้มกว่าค้างไว้แม้เอาเมาส์ออกจากแถวนั้นไปแล้ว
+- **Splitter ลากปรับขนาด panel ด้วยเมาส์ (F4)** — ลากเส้นบางๆ ระหว่าง Scene
+  Tree/Viewport/Components และระหว่าง Project Files/Console
+- **Drag-and-drop reparent** — ลากแถวหนึ่งในทรีไปปล่อยบนอีกแถว (เช่นลาก
+  `Crate C` ไปวางบน `Lighting`) จะเห็น entity ย้าย parent จริงในทรี
+- **Field editor ครบทุกชนิดพร้อมกัน** — เลือก `Crate A` หรือ `Crate B` ใน
+  Scene Tree แล้วดู Components panel ขวา: `label` (String, คลิกแล้วพิมพ์ทับ),
+  `enabled` (Bool, คลิกแล้ว toggle ทันที), `speed` (F32), `offset` (Vec3 —
+  สามช่อง x/y/z), `tint` (Color — สี่ช่อง r/g/b/a), `uv` (Vec2 — ยังไม่มี
+  editor เฉพาะ เลยแสดงเป็น read-only `{:?}` แบบ fallback)
+- **Scene Tree scrollbar (F2)** — ทรีมี ~18 แถว (หลายกลุ่ม, มีลูกหลาน 2 ชั้นที่
+  `Crate A Lid`, บวก `Marker 1`-`Marker 8` เป็น root เดี่ยวๆ) พอจะล้นพื้นที่
+  Scene Tree panel เริ่มต้นได้ — ลองหมุนล้อเมาส์เหนือทรี หรือลากแถบเทาบางๆ
+  ทางขวาของทรี (scrollbar thumb — โผล่เฉพาะตอนแถวล้นเท่านั้น) ถ้าไม่ล้น ลอง
+  ลากแถบ splitter ระหว่าง Scene Tree/Viewport ให้แคบลงก่อน
 
 ## `third_party_extension`
 

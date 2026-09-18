@@ -16,11 +16,13 @@
 
 mod breakpoint;
 mod dnd;
+mod scrollbar;
 mod shell;
 mod splitter;
 
 pub use breakpoint::{bottom_panel_height_px, breakpoint_for_width, side_panel_width_px, LayoutBreakpoint};
 pub use dnd::{drag_and_drop_system, DragAndDropPlugin, DragDropped, DragPayload, DragSource, DragState, DropTarget};
+pub use scrollbar::{clamp_scroll, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarPlugin, ScrollbarThumb};
 pub use shell::{
     spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, EditorShellEntities, EditorShellRoot,
     InspectorPanelSlot, ScenePanelSlot, StatusBarSlot, ToolbarSlot, ViewportSlot,
@@ -68,6 +70,9 @@ impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<DragAndDropPlugin>() {
             app.add_plugins(DragAndDropPlugin);
+        }
+        if !app.is_plugin_added::<ScrollbarPlugin>() {
+            app.add_plugins(ScrollbarPlugin);
         }
         app.insert_resource(bevy_ui::UiScale(self.ui_scale));
         app.add_systems(Startup, spawn_shell_on_startup.in_set(EditorShellSet));
