@@ -303,6 +303,7 @@ Drag asset เข้า viewport (phase 5), ลาก field เข้า inspect
 - เดิน `Parent`/`Children` + `Name` ของ world จริงสร้างเป็น tree ใน panel ซ้าย, entity ที่มี `EditorOnly` (ข้อ 8.3) ไม่ต้องแสดงใน tree เลยตั้งแต่ phase นี้
 - คลิกแถวใน tree → เขียน `Selection` resource, highlight แถวที่เลือก
 - ปุ่ม "Add Entity" / เมนูคลิกขวา "Delete" ตามภาพตัวอย่างต้นฉบับ, ลากแถวใน tree เพื่อ reparent (ใช้ drag-and-drop framework กลางตามข้อ 8.5)
+  - **ปรับสโคปตอน implement:** ยังไม่มี context-menu framework (ไม่ได้อยู่ใน scope ของ phase ไหนเลยจนถึงตอนนี้) จึงทำ "Delete" เป็นปุ่มใน toolbar ของ panel + คีย์ Delete (จองผ่าน `HotkeyRegistry` ข้อ 8.2) แทนเมนูคลิกขวา — ฟังก์ชันเดียวกัน ต่างแค่ทาง UI เข้าถึง กลับมาทำเมนูจริงเมื่อมี framework นั้น
 - **เทส:** headless test ใส่ entity มีลูกหลาน 2-3 ชั้นใน `minimal_game` แล้วตรวจว่า tree ตรงกับ hierarchy จริง, จำลองคลิก/ลากแล้วตรวจ `Selection`/hierarchy เปลี่ยนตามที่คาด, ตรวจว่า entity ที่มี `EditorOnly` ไม่โผล่ใน tree
 
 ### Phase 3 — Inspector ผ่าน `bevy_reflect`

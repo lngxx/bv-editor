@@ -11,12 +11,16 @@
 //! - [`splitter`] — the drag-to-resize mechanism between zones.
 //! - [`breakpoint`] — pure sizing math, independent of `bevy_ui`, used to
 //!   pick the shell's *initial* panel sizes from the window's width.
+//! - [`dnd`] — the generic drag-and-drop framework (section 8.5), first used
+//!   by the Scene Tree (Phase 2) to reparent by dragging a row.
 
 mod breakpoint;
+mod dnd;
 mod shell;
 mod splitter;
 
 pub use breakpoint::{bottom_panel_height_px, breakpoint_for_width, side_panel_width_px, LayoutBreakpoint};
+pub use dnd::{drag_and_drop_system, DragAndDropPlugin, DragDropped, DragPayload, DragSource, DragState, DropTarget};
 pub use shell::{
     spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, EditorShellEntities, EditorShellRoot,
     InspectorPanelSlot, ScenePanelSlot, StatusBarSlot, ToolbarSlot, ViewportSlot,
@@ -27,13 +31,27 @@ use bevy_app::{App, Plugin, Startup, Update};
 use bevy_ecs::prelude::*;
 use bevy_window::{PrimaryWindow, Window};
 
-/// Spawns the Phase 1 shell on startup and drives its splitters every frame.
+/// The system set [`spawn_shell_on_startup`] runs in. Anything that adds
+/// content under one of the shell's `*Slot`s during `Startup` (the Scene
+/// Tree, from Phase 2 on) must order itself `.after(EditorShellSet)` —
+/// `Startup` systems from different plugins have no guaranteed relative
+/// order otherwise, so without this a panel's own startup spawn can run
+/// before the slot it looks for exists.
+#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct EditorShellSet;
+
+/// Spawns the shell on startup, drives its splitters every frame, and runs
+/// the generic drag-and-drop framework consumers (the Scene Tree, from Phase
+/// 2 on) build on top of.
 #[derive(Default)]
 pub struct EditorUiPlugin;
 
 impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_shell_on_startup);
+        if !app.is_plugin_added::<DragAndDropPlugin>() {
+            app.add_plugins(DragAndDropPlugin);
+        }
+        app.add_systems(Startup, spawn_shell_on_startup.in_set(EditorShellSet));
         app.add_systems(Update, splitter_drag_system);
     }
 }

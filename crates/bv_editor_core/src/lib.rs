@@ -12,17 +12,34 @@
 //! - [`hotkey::HotkeyRegistry`] / [`hotkey::HotkeyAppExt`] — the central
 //!   place hotkeys get reserved (section 8.2).
 //!
-//! `Selection` and the `EditorOnly` marker (section 8.3) are still not here;
-//! they land with the crates that first need them (Phase 2 and Phase 4).
+//! Phase 2 adds the other two pieces of shared state sections 6 and 8.3
+//! describe:
+//!
+//! - [`Selection`] — the one resource both the Scene Tree (Phase 2) and,
+//!   later, viewport picking (Phase 4) write to.
+//! - [`EditorOnly`] — marks entities the editor itself created (its own
+//!   camera, gizmos, grid lines) so the Scene Tree can skip them now and
+//!   scene export (Phase 6) can filter them out later.
 
 mod hotkey;
+mod selection;
 
 pub use hotkey::{HotkeyAppExt, HotkeyDescriptor, HotkeyId, HotkeyRegistry};
+pub use selection::Selection;
 
 use bevy_app::{App, Plugin};
+use bevy_ecs::component::Component;
 use bevy_log::info;
 use bevy_state::app::AppExtStates;
 use bevy_state::state::States;
+
+/// Marks an entity as created by the editor itself rather than the host
+/// game or a loaded scene: the editor's own camera, gizmo meshes, grid
+/// lines, and Scene Tree UI rows. Never shown in the Scene Tree (Phase 2)
+/// and must never be included when exporting a scene (Phase 6, mandatory —
+/// see docs/DESIGN.md section 8.3).
+#[derive(Component, Clone, Copy, Default, Debug)]
+pub struct EditorOnly;
 
 /// The editor's own high-level mode, independent of whatever state machine
 /// the host game runs. `Editing`/`Paused` are equivalent for most systems
@@ -49,6 +66,7 @@ impl Plugin for EditorCorePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<EditorState>();
         app.init_resource::<HotkeyRegistry>();
+        app.init_resource::<Selection>();
         info!("bv_editor_core: EditorCorePlugin loaded");
     }
 }
@@ -80,5 +98,13 @@ mod tests {
         app.add_plugins(EditorCorePlugin);
 
         assert!(app.world().get_resource::<HotkeyRegistry>().is_some());
+    }
+
+    #[test]
+    fn selection_resource_exists_after_build() {
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(EditorCorePlugin);
+
+        assert!(app.world().get_resource::<Selection>().is_some());
     }
 }

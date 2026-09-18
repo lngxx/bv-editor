@@ -6,3 +6,16 @@ license.workspace = true
 description = "Built-in extension: the Scene Tree panel."
 
 [dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_transform = { workspace = true }
+bevy_input = { workspace = true, features = ["keyboard"] }
+bevy_ui = { workspace = true }
+bevy_text = { workspace = true }
+bevy_color = { workspace = true }
+bv_editor_core = { workspace = true }
+bv_editor_ui = { workspace = true }
+
+[dev-dependencies]
+bv_editor_test_utils = { workspace = true }
+bevy_math = { workspace = true }

@@ -25,6 +25,7 @@ bevy_ui = { version = "=0.19.1", default-features = false }
 bevy_text = { version = "=0.19.1", default-features = false }
 bevy_color = { version = "=0.19.1", default-features = false }
 bevy_math = { version = "=0.19.1", default-features = false }
+bevy_transform = { version = "=0.19.1", default-features = false }
 
 bv_editor_core = { path = "crates/bv_editor_core" }
 bv_editor_ui = { path = "crates/bv_editor_ui" }
