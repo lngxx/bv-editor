@@ -30,6 +30,7 @@ bevy_camera = { version = "=0.19.1", default-features = false }
 bevy_image = { version = "=0.19.1", default-features = false }
 bevy_asset = { version = "=0.19.1", default-features = false }
 bevy_render = { version = "=0.19.1", default-features = false }
+bevy_reflect = { version = "=0.19.1", default-features = false }
 
 bv_editor_core = { path = "crates/bv_editor_core" }
 bv_editor_ui = { path = "crates/bv_editor_ui" }

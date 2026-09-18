@@ -15,8 +15,10 @@
 //! toolbar, Scene Tree, viewport, Components, Project Files, Console, status
 //! bar) with resizable splitters between zones. Phase 2 adds
 //! [`bv_editor_scene_panel::ScenePanelPlugin`], which fills the Scene Tree
-//! slot in with real content. The other built-in panels, gizmos, and the
-//! viewport itself are still empty crates and land in later phases.
+//! slot in with real content. Phase 3 adds [`InspectorPanelPlugin`], which
+//! fills the Components slot with a `bevy_reflect`-driven field editor for
+//! the selected entity. The other built-in panels, gizmos, and the viewport
+//! itself are still empty crates and land in later phases.
 
 use bevy::app::{App, Plugin};
 use bevy::log::info;
@@ -35,6 +37,7 @@ pub use bv_editor_gizmos_builtin as gizmos_builtin;
 pub use bv_editor_viewport as viewport;
 
 pub use bv_editor_core::EditorCorePlugin;
+pub use bv_editor_inspector_panel::InspectorPanelPlugin;
 pub use bv_editor_scene_panel::ScenePanelPlugin;
 pub use bv_editor_ui::EditorUiPlugin;
 pub use bv_editor_viewport::ViewportPlugin;
@@ -64,6 +67,7 @@ impl Plugin for EditorPlugin {
         app.add_plugins(EditorCorePlugin);
         app.add_plugins(EditorUiPlugin { ui_scale: self.ui_scale });
         app.add_plugins(ScenePanelPlugin);
+        app.add_plugins(InspectorPanelPlugin);
         app.add_plugins(ViewportPlugin);
         info!("bv_editor: EditorPlugin loaded successfully");
     }
@@ -119,5 +123,44 @@ mod tests {
         // the Add/Delete toolbar row and the (possibly still-empty) rows
         // container on top of that.
         assert!(children.len() >= 3, "expected the Scene Tree's own chrome on top of the Phase 1 title, got {} children", children.len());
+    }
+
+    /// Same regression guard as `scene_panel_chrome_is_actually_spawned_through_the_real_editor_plugin`,
+    /// for `InspectorPanelPlugin`'s own `Startup` chrome-spawn system.
+    #[test]
+    fn inspector_panel_chrome_is_actually_spawned_through_the_real_editor_plugin() {
+        use bevy::ecs::hierarchy::Children;
+        use bevy::ecs::query::With;
+
+        let mut app = setup();
+        app.add_plugins(EditorPlugin::default());
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let world = app.world_mut();
+        let mut slots = world.query_filtered::<&Children, With<bv_editor_ui::InspectorPanelSlot>>();
+        let children = slots.single(world).expect("InspectorPanelSlot should exist");
+        // Phase 1 alone gives it just the title text; Phase 3's chrome adds
+        // the (possibly still-empty) body container on top of that.
+        assert!(children.len() >= 2, "expected the Inspector's own chrome on top of the Phase 1 title, got {} children", children.len());
+    }
+
+    /// End-to-end: composed through the real `EditorPlugin` (not a bare
+    /// slot, per the ordering guard above), selecting an entity with
+    /// `Transform` should make its fields show up in the Components panel.
+    #[test]
+    fn selecting_an_entity_through_the_real_editor_plugin_populates_the_inspector() {
+        use bevy::transform::components::Transform;
+
+        let mut app = setup();
+        app.add_plugins(EditorPlugin::default());
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let cube = app.world_mut().spawn(Transform::from_xyz(1.0, 2.0, 3.0)).id();
+        app.world_mut().resource_mut::<bv_editor_core::Selection>().select_only(cube);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let world = app.world_mut();
+        let mut fields = world.query::<&bv_editor_reflect_ui::FieldHandle>();
+        assert!(fields.iter(world).count() > 0, "expected the Inspector to render at least one field for the selected entity's Transform");
     }
 }

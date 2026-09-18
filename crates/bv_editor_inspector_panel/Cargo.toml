@@ -6,3 +6,18 @@ license.workspace = true
 description = "Built-in extension: the Components/Materials/Resources inspector tab."
 
 [dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true, features = ["bevy_reflect"] }
+bevy_reflect = { workspace = true }
+bevy_transform = { workspace = true, features = ["bevy_reflect"] }
+bevy_color = { workspace = true, features = ["bevy_reflect"] }
+bevy_ui = { workspace = true }
+bevy_text = { workspace = true }
+bv_editor_core = { workspace = true }
+bv_editor_ui = { workspace = true }
+bv_editor_reflect_ui = { workspace = true }
+
+[dev-dependencies]
+bv_editor_test_utils = { workspace = true }
+bevy_math = { workspace = true }
+bevy_input = { workspace = true, features = ["keyboard", "mouse"] }

@@ -6,3 +6,15 @@ license.workspace = true
 description = "Generic field editor generated from bevy_reflect + TypeRegistry, plus the asset-reference (Handle<T>) picker widget."
 
 [dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true, features = ["bevy_reflect"] }
+bevy_reflect = { workspace = true }
+bevy_math = { workspace = true, features = ["bevy_reflect"] }
+bevy_color = { workspace = true, features = ["bevy_reflect"] }
+bevy_input = { workspace = true, features = ["keyboard", "mouse"] }
+bevy_ui = { workspace = true }
+bevy_text = { workspace = true }
+
+[dev-dependencies]
+bv_editor_test_utils = { workspace = true }
+bevy_transform = { workspace = true, features = ["bevy_reflect"] }

@@ -312,6 +312,11 @@ Drag asset เข้า viewport (phase 5), ลาก field เข้า inspect
 - แก้ค่าใน UI แล้วเขียนกลับ component จริงผ่าน reflect
 - ยังไม่ต้องทำ asset-reference picker (ข้อ 8.4) ใน phase นี้ — ปล่อย field แบบ `Handle<T>` เป็น read-only placeholder ไปก่อน แล้วมาทำคู่กับ Phase 5
 - **เทส:** headless test เลือก entity ที่มี `Transform`, จำลองแก้ `translation.x` ผ่าน inspector แล้วตรวจ component จริงในเวิลด์เปลี่ยนค่าตรงตามที่ set
+- **ปรับสโคปตอน implement:**
+  - Component ที่โผล่ในลิสต์คือเฉพาะตัวที่ผ่าน `AppTypeRegistry`/`#[reflect(Component)]` แล้วเท่านั้น (ตรงกับหัวข้อ "Inspector ผ่าน bevy_reflect" อยู่แล้ว) — component ที่ไม่ได้ reflect-register (เช่น `Mesh3d`, `Visibility`) จะยังไม่โผล่ในลิสต์จนกว่าจะมีใคร register ให้ ไม่ใช่ fallback แบบไม่มี field
+  - `bevy_ui_widgets`/`bevy_feathers` (ที่ตั้งเป้าไว้ในข้อ 4) ยังไม่ได้ต่อเข้าระบบจริง เพราะยังไม่มี text-input widget ให้ใช้ตอนเขียน phase นี้ — ทำ text field เอง (`bv_editor_reflect_ui`): คลิกเพื่อเริ่มพิมพ์ (buffer เริ่มว่างเสมอ ไม่ prefill ค่าปัจจุบัน), Enter commit, Escape cancel, ผูกกับ `KeyCode` ตรงๆ (ไม่รองรับ shift/ตัวพิมพ์ใหญ่) แทน — ประเมินย้ายไปใช้ widget จริงเมื่อมันเสถียรพอ ไม่ปิดทางไว้
+  - `Color` แก้ผ่าน 4 sub-field ตัวเลข r/g/b/a (round-trip ผ่าน `Srgba`) แทนการเข้าถึง path ตรงๆ เพราะ `Color` เป็น enum ของ color space ต่างๆ ไม่มี dotted path ไปยัง channel เดียวให้ใช้
+  - field ที่ยังไม่มี editor เฉพาะ (รวม `Handle<T>`, `Entity`) render เป็น `{:?}` read-only แทนการซ่อนทิ้ง — เห็นว่า field มีอยู่แม้แก้ไม่ได้
 
 ### Phase 4 — 3D viewport, editor camera & extensible gizmo (ดูรายละเอียดเต็มในข้อ 7)
 - **ทำไปแล้วบางส่วนก่อนเวลา (นอกลำดับ):** ระหว่าง Phase 2 มี feedback ให้ viewport แสดงภาพจากกล้องจริงๆ จึงทำ `bv_editor_viewport` ขั้นต่ำไปก่อน — spawn `EditorCamera` (+ `EditorOnly`) เรนเดอร์ลง `RenderTarget::Image` แล้วแปะใน Viewport slot ผ่าน `bevy_ui::widget::ViewportNode` (widget สำเร็จรูปของ bevy เอง ซึ่ง resize render target ตาม panel ให้อัตโนมัติอยู่แล้ว แก้ความเสี่ยงเรื่อง resize ในข้อ 10 ไปในตัว) ตำแหน่งกล้องยังเป็นค่าคงที่มองจากมุมเดียว **ยังไม่ทำ**: orbit/pan/zoom controller, gizmo API/manipulator ทั้งหมด, viewport picking, และ gate ตาม `EditorState::Editing`/`Paused` (ข้อ 7.1) — สามอย่างหลังยังเป็นสโคปของ Phase 4 เต็มรูปแบบ ทำต่อตอนถึงคิว
