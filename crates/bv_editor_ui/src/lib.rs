@@ -135,6 +135,49 @@ mod tests {
     }
 
     #[test]
+    fn panels_carry_real_min_max_size_bounds() {
+        // docs/UI_FEATURES.md F7: these must be real `Node.min_*`/`max_*`
+        // constraints (enforced by `bevy_ui`'s own layout engine every
+        // frame), not just numbers a splitter happens to clamp against
+        // while it's being dragged.
+        use bevy_ecs::system::RunSystemOnce;
+        use bevy_ui::Val;
+
+        let mut app = bv_editor_test_utils::headless_app();
+        let entities = app
+            .world_mut()
+            .run_system_once(|mut commands: Commands| spawn_editor_shell(&mut commands, LayoutBreakpoint::Normal))
+            .expect("spawning the shell should not fail");
+
+        let world = app.world();
+        let scene = world.get::<Node>(entities.scene_panel).unwrap();
+        let inspector = world.get::<Node>(entities.inspector_panel).unwrap();
+        for panel in [scene, inspector] {
+            assert!(matches!(panel.min_width, Val::Px(px) if px > 0.0));
+            assert!(matches!(panel.max_width, Val::Px(px) if px > 0.0));
+        }
+
+        let viewport = world.get::<Node>(entities.viewport).unwrap();
+        assert!(matches!(viewport.min_width, Val::Px(px) if px > 0.0), "viewport must have its own width floor (F7 gap #2)");
+        assert!(matches!(viewport.min_height, Val::Px(px) if px > 0.0), "viewport must have its own height floor (F7 gap #2)");
+
+        let assets = world.get::<Node>(entities.assets_panel).unwrap();
+        let console = world.get::<Node>(entities.console_panel).unwrap();
+        for panel in [assets, console] {
+            assert!(matches!(panel.min_width, Val::Px(px) if px > 0.0), "bottom-row panels must have a width floor (F7 gap #3)");
+        }
+
+        // The bottom row itself (not exposed as a named `EditorShellEntities`
+        // field) is whatever the vertical `Splitter`'s target is.
+        let world = app.world_mut();
+        let mut splitters = world.query::<&Splitter>();
+        let bottom_row = splitters.iter(world).find(|s| s.axis == SplitterAxis::Vertical).map(|s| s.target).expect("the bottom row's vertical splitter should exist");
+        let bottom_row_bounds = world.get::<Node>(bottom_row).expect("the bottom row's target should be a real Node");
+        assert!(matches!(bottom_row_bounds.min_height, Val::Px(px) if px > 0.0));
+        assert!(matches!(bottom_row_bounds.max_height, Val::Px(px) if px > 0.0));
+    }
+
+    #[test]
     fn splitter_drag_resizes_its_target() {
         use bevy_input::mouse::{MouseButton, MouseMotion};
         use bevy_input::ButtonInput;

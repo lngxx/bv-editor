@@ -111,30 +111,19 @@
 
 ---
 
-## F7 — Panel: min/max size ที่ยึดอยู่จริง ไม่ใช่แค่ตอนลาก splitter
+## F7 — Panel: min/max size ที่ยึดอยู่จริง ไม่ใช่แค่ตอนลาก splitter ✅ implemented
 
-**สถานะปัจจุบัน:** มี min/max อยู่แล้ว **แต่บังคับใช้แค่ตอนกำลังลาก splitter ตัวนั้นอยู่เท่านั้น** — [`shell.rs`](../crates/bv_editor_ui/src/shell.rs) กำหนด `SIDE_PANEL_MIN_PX`/`MAX_PX` (150/640) ให้ Scene Tree/Components และ `BOTTOM_ROW_MIN_PX`/`MAX_PX` (80/560) ให้แถวล่าง ผ่าน `Splitter { min_px, max_px, .. }` ต่อตัว ซึ่ง [`splitter_drag_system`](../crates/bv_editor_ui/src/splitter.rs) เรียก `resize_value` clamp ทุกครั้งที่ลาก — ใช้งานได้ดีในสถานการณ์นั้นเพียงอย่างเดียว
+**สถานะ:** ทำเสร็จแล้ว — **ง่ายกว่าที่ร่างสเปกไว้ตอนแรกมาก** เพราะระหว่าง implement พบว่า `bevy_ui`'s `Node` มี `min_width`/`max_width`/`min_height`/`max_height` (`Val`) เป็น field จริงอยู่แล้ว ซึ่ง flexbox layout engine (taffy) บังคับใช้เป็น **hard floor/ceiling ทุกเฟรมโดย engine เอง** ไม่ว่าที่มาของการเปลี่ยนขนาดจะเป็นอะไร (ลาก splitter, resize หน้าต่าง, โหลด layout ในอนาคต) — ตรงกับหลักการ "built-in ก่อนเสมอ" section 4 ของ DESIGN.md ยิ่งกว่าแผนเดิมที่จะเขียน custom system ฟัง `WindowResized` เอง (แผนเดิมทิ้งไปทั้งหมด ไม่ต้องมี `PanelSizeBounds` component หรือ `enforce_panel_bounds_on_resize` system ตามที่ร่างไว้ — native `Node.min_*`/`max_*` ทำงานแทนได้หมดโดยไม่ต้องเขียน system ใหม่เลยสักตัว)
 
-ช่องโหว่ที่ยังไม่ถูกปิด (ไล่โค้ดแล้วพบ 3 จุด):
+การเปลี่ยนแปลงจริงทั้งหมดอยู่ใน [`shell.rs`](../crates/bv_editor_ui/src/shell.rs), ล้วนเป็นการเพิ่ม field ใน `Node` ที่ spawn อยู่แล้ว:
 
-1. **Resize หน้าต่างหลัง startup ไม่ re-clamp เลย** — [`breakpoint.rs`](../crates/bv_editor_ui/src/breakpoint.rs) ในคอมเมนต์ของไฟล์เองยอมรับตรงๆ ว่า "reacting continuously to window resizes is not part of the Phase 1 scope" breakpoint ถูกคำนวณครั้งเดียวตอน `Startup` เท่านั้น (`spawn_shell_on_startup`) ถ้าผู้ใช้ลาก panel ไปที่ `max_px` (640px) แล้วค่อยลดขนาดหน้าต่าง OS ให้เล็กลงมากๆ ไม่มี system ไหนไปหด panel กลับเข้า bound เลย
-2. **Viewport (กล่องกลาง) ไม่มี min size เลย** — ใน `shell.rs` viewport เป็นแค่ `Node { flex_grow: 1.0, height: Val::Percent(100.0), ..panel_node() }` ไม่มี `min_width` ถ้า Scene Tree + Components ทั้งสองฝั่งถูกลากไปใกล้ `max_px` (640+640=1280px) บนหน้าต่างที่ไม่ได้กว้างมาก viewport จะถูกบีบจนความกว้างเข้าใกล้ 0 หรือติดลบ (flexbox จะ clamp ที่ 0 แต่ผลคือ viewport หายไปเงียบๆ ไม่มี floor ป้องกัน)
-3. **Bottom row (Project Files/Console) ก็ไม่มี min ต่อฝั่งเหมือนกัน** — มีแค่ splitter เดียวคุมความสูงของทั้งแถว (`bottom_row`) แต่ระหว่าง Project Files กับ Console เองใช้ `flex_grow` ล้วนๆ (2 ต่อ 1) ไม่มี `min_width` ต่อฝั่ง เข้าเคสเดียวกับข้อ 2 ถ้าแถวทั้งก้อนถูกบีบความสูงจนต่ำมาก (แม้ตัวแถวเองมี `BOTTOM_ROW_MIN_PX` กันไว้ที่ 80px ก็ตาม เนื้อหาภายในแถวยังโดนบีบความกว้างได้อิสระ)
+- **ช่องโหว่ 1 (resize หน้าต่างไม่ re-clamp)** — ปิดแล้วโดยอัตโนมัติ: `min_width`/`max_width` (ฝั่ง)/`min_height`/`max_height` (แถวล่าง) เป็น constraint จริงที่ layout engine คำนวณใหม่ทุกเฟรมอยู่แล้ว ไม่ใช่แค่ตอน `Startup`
+- **ช่องโหว่ 2 (viewport ไม่มี min)** — viewport ได้ `min_width: VIEWPORT_MIN_WIDTH_PX (200)` + `min_height: VIEWPORT_MIN_HEIGHT_PX (150)` เป็นของตัวเอง และ `middle_row` (แถวกลางที่บรรจุ Scene Tree/Viewport/Components) ก็ได้ `min_height` เท่ากันด้วย เพราะ `middle_row` คือตัวที่แข่งพื้นที่แนวตั้งกับ `bottom_row` โดยตรงใน flex column ของ `root` — ใส่ min ไว้ที่ viewport อย่างเดียวไม่พอสำหรับแกนตั้ง เนื่องจากมันไม่ใช่ direct sibling ของ `bottom_row`
+- **ช่องโหว่ 3 (Project Files/Console ไม่มี min)** — ทั้งคู่ได้ `min_width: BOTTOM_PANEL_MIN_WIDTH_PX (120)` แล้ว แม้ยังไม่มี splitter โต้ตอบได้ระหว่างสองอันนี้ (ยังเป็นแค่เส้นแบ่งนิ่งๆ) min ก็ยังมีผลจริงป้องกันไม่ให้ถูกบีบจนหายไปถ้าทั้งแถวถูกบีบสูงสั้นมาก
+- **known limitation ที่ยอมรับตามสเปกเดิม:** ถ้าผลรวม min ของทุก panel ในแถวเดียวกันมากกว่าความกว้าง/สูงหน้าต่างจริงๆ (หน้าต่างเล็กมาก) flexbox จะจัดการแบบ CSS มาตรฐาน (บีบตามสัดส่วน `flex_shrink`, ไม่ panic ไม่ตัวเลขติดลบ) แต่ layout อาจดูอึดอัด — ยังไม่มี fallback พิเศษ (เช่น auto-collapse panel) ตามที่ระบุไว้เดิมว่าไม่ต้องปิดรอบนี้
+- เทส `panels_carry_real_min_max_size_bounds` ใน [`bv_editor_ui/src/lib.rs`](../crates/bv_editor_ui/src/lib.rs) ตรวจว่าทุก panel (Scene Tree, Components, viewport, bottom row, Project Files, Console) มี `min_width`/`max_width`/`min_height`/`max_height` เป็น `Val::Px` ที่มากกว่า 0 จริง ไม่ใช่แค่ default `Val::Auto`
 
-**สเปก:**
-
-- ทุก panel ต้องประกาศ `(min_px, max_px)` ของตัวเองเป็นค่าที่มีอยู่จริงตลอดเวลา ไม่ใช่แค่ค่าที่ splitter อ้างถึงตอนลาก — เพิ่ม **system ที่รันทุกครั้งที่ window resize** (ไม่ใช่แค่ตอน `Startup`) ไล่ตรวจ panel ที่มี bound แล้ว clamp ขนาดปัจจุบันกลับเข้า range ถ้าเกิน (ไม่ reset กลับไปที่ค่า breakpoint default — งานนี้ต้อง **ไม่ทำลาย** ขนาดที่ผู้ใช้ตั้งเองด้วยมือถ้ามันยังอยู่ในขอบเขตที่ยอมรับได้ของขนาดหน้าต่างใหม่)
-- **Viewport ต้องมี min width/height เป็นของตัวเอง** (ตัวเลขที่ยังพอมองเห็นอะไรได้ เช่น 200px) แล้ว side-panel splitter ต้อง "รู้" bound นี้ด้วย ไม่ใช่แค่ bound ของ panel ตัวเอง — ลาก Scene Tree ให้กว้างขึ้นต้องหยุดก่อนที่ viewport จะแคบกว่า floor ของมัน แม้ Scene Tree เองยังไม่ถึง `max_px` ก็ตาม (คือ "min ของเพื่อนบ้าน" มีผลย้อนกลับมาจำกัด max ที่ลากได้จริงของ splitter)
-- Bottom row: ให้ Project Files/Console มี `min_width` ต่อฝั่งเหมือนกัน (ตัวเลขเล็กพอจะยังเห็น breadcrumb/log ได้ เช่น 120px) ด้วยหลักการเดียวกับข้อบน
-- เมื่อ **ผลรวม min ของทุก panel ในแถวเดียวกันมากกว่าความกว้างหน้าต่างจริง** (หน้าต่างเล็กมากๆ) เป็น edge case ที่ยอมรับให้ overflow/ซ้อนทับกันได้ในรอบแรก (ไม่ต้องมี layout สำรอง เช่น auto-collapse panel) — ระบุไว้ตรงๆ ว่าเป็น known limitation ไม่ใช่ bug ที่ต้องปิดในรอบนี้ เพื่อกันสโคปบาน
-
-**ทางทำ (แนวคิด ไม่ใช่โค้ดจริง):**
-
-- เพิ่ม `PanelSizeBounds { min_px: f32, max_px: f32 }` component แยกจาก `Splitter` (ปัจจุบัน bound ผูกอยู่กับ splitter โดยตรง ซึ่งใช้ได้ตอนลากอย่างเดียว) ใส่ให้ทุก panel entity ที่มี bound จริง แล้วให้ทั้ง `splitter_drag_system` และ system ใหม่ (เรียกว่า `enforce_panel_bounds_on_resize` หรือคล้ายกัน) อ่านตัวเดียวกันนี้ แทนที่จะมี bound สองชุดไม่ sync กัน
-- ระบบใหม่ subscribe `bevy_window::WindowResized` event (มีอยู่แล้วใน `bevy_window`, built-in) แทนการ poll ทุกเฟรม — ตรงกับหลักการ "built-in ก่อนเสมอ" ของ section 4 DESIGN.md
-- viewport's min เป็นค่าคงที่ระดับ shell (ไม่ใช่ต่อ splitter) — วิธีที่ตรงไปตรงมาที่สุดคือให้ `resize_value` (หรือ wrapper ใหม่) รับพารามิเตอร์เพิ่มคือ "ที่ว่างที่เหลือของเพื่อนบ้านตอนนี้" แล้วคำนวณ max ที่ใช้ได้จริง ณ ขณะนั้น (`effective_max = max_px.min(current_row_width - neighbor_min_px - splitter_thickness)`) เป็น pure function ใหม่ที่ต่อยอดจาก `resize_value` เดิม เทสแยกได้เหมือนกัน
-
-**Phase:** เป็นการเติมของ Phase 1 (`bv_editor_ui`) ให้ "resizable splitter" ที่ระบุไว้แล้วใน DESIGN.md สมบูรณ์ขึ้น ไม่ใช่ phase ใหม่ — ทำได้อิสระจาก F1–F6 ทั้งหมด (ไม่พึ่งอะไรจากข้ออื่น และไม่มีข้อไหนพึ่งมันกลับ) จึงแทรกเข้าคิวตรงไหนก็ได้
+**Phase:** เติมของ Phase 1 (`bv_editor_ui`) เดียวกับที่ร่างไว้ — ทำเสร็จโดยไม่แตะ F1–F6 เลยตามที่คาด
 
 ---
 
@@ -142,11 +131,12 @@
 
 ลำดับนี้เรียงตามการพึ่งพากันของฟีเจอร์ ไม่ใช่ความสำคัญ — ต้องคุยและ agree สเปกด้านบนให้เรียบร้อยก่อนเริ่มโค้ดข้อไหนทั้งสิ้น:
 
-1. **F1** (row highlight) — เล็ก อิสระ ทำได้ทันทีไม่พึ่งอะไรใหม่
-2. **F2 → F3** (scrollbar) — ทำ widget กลางใน `bv_editor_ui` ครั้งเดียว ใช้ซ้ำสองที่
-3. **F4 ส่วน cursor feedback** — เล็ก อิสระ แทรกเมื่อไหร่ก็ได้
-4. **F7** (min/max ที่ยึดอยู่จริงตอน resize หน้าต่าง) — เล็ก-กลาง อิสระจากข้ออื่นทั้งหมด แทรกเมื่อไหร่ก็ได้เหมือนกัน แนะนำทำก่อน F5 เพราะ F5 (docking) จะยิ่งทำให้ layout ซับซ้อนขึ้นอีก ควรมี bound ที่แข็งแรงไว้ก่อน
-5. **F6 ขั้นต่ำ** (`IconRegistry` + วาด icon เดี่ยวได้) — โครงสร้างพื้นฐานที่ F5 ต้องใช้
-6. **F5** (docking) — ก้อนใหญ่สุด เสี่ยงบานปลายสุด ทำหลังสุด ตรงกับ Phase 10 เดิมของ DESIGN.md รวม F4 ส่วน persist layout เข้าไปพร้อมกัน
+1. ~~**F1** (row highlight)~~ ✅ เสร็จแล้ว
+2. ~~**F2** (Scene Tree scrollbar)~~ ✅ เสร็จแล้ว — widget กลาง `bv_editor_ui::scrollbar` พร้อมให้ F3 ใช้ซ้ำ
+3. ~~**F7** (min/max ที่ยึดอยู่จริง)~~ ✅ เสร็จแล้ว — ทำได้เร็วกว่าคาดเพราะใช้ `Node.min_*`/`max_*` ของ `bevy_ui` ตรงๆ
+4. **F3** (Components panel scrollbar) — ต่อ widget จาก F2 เข้ากับ Inspector panel เท่านั้น
+5. **F4 ส่วน cursor feedback** — เล็ก อิสระ แทรกเมื่อไหร่ก็ได้
+6. **F6 ขั้นต่ำ** (`IconRegistry` + วาด icon เดี่ยวได้) — โครงสร้างพื้นฐานที่ F5 ต้องใช้
+7. **F5** (docking) — ก้อนใหญ่สุด เสี่ยงบานปลายสุด ทำหลังสุด ตรงกับ Phase 10 เดิมของ DESIGN.md รวม F4 ส่วน persist layout เข้าไปพร้อมกัน
 
 ทุกข้อยังต้องมี headless test ตามหลักการ section 8.1 ของ DESIGN.md (`bv_editor_test_utils`) ไม่ใช่ "ดูด้วยตา" อย่างเดียว — resize/scroll/drag math ทั้งหมดควรแยกเป็น pure function เทสได้แบบไม่พึ่ง ECS ก่อน (ตามแนวทางที่ `resize_value` ใน `splitter.rs` วางไว้แล้ว) แล้วค่อยห่อด้วย system บางๆ ต่อ

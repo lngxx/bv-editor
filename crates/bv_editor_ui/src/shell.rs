@@ -23,6 +23,21 @@ const SPLITTER_THICKNESS_PX: f32 = 6.0;
 const TOOLBAR_HEIGHT_PX: f32 = 40.0;
 const STATUS_BAR_HEIGHT_PX: f32 = 24.0;
 
+/// docs/UI_FEATURES.md F7: the viewport's own floor, so it can never be
+/// squeezed to nothing by the side panels/bottom row growing. Set as real
+/// `Node.min_width`/`min_height` below rather than computed by a custom
+/// system — `bevy_ui`'s own flexbox layout already enforces `min_*` as a
+/// hard floor on every frame regardless of *why* a panel's size changed
+/// (drag, window resize, a future saved-layout load, ...), which is exactly
+/// "min/max size ที่ยึดอยู่จริง" without reimplementing constraint solving.
+const VIEWPORT_MIN_WIDTH_PX: f32 = 200.0;
+const VIEWPORT_MIN_HEIGHT_PX: f32 = 150.0;
+/// Same idea for Project Files/Console (F7's third gap): there's no
+/// interactive splitter between them yet (just the static divider bar
+/// below), but a floor is worth having regardless so they can't be crushed
+/// to nothing if the bottom row itself ends up short.
+const BOTTOM_PANEL_MIN_WIDTH_PX: f32 = 120.0;
+
 const PANEL_BACKGROUND: Color = Color::srgb(0.16, 0.16, 0.18);
 const VIEWPORT_BACKGROUND: Color = Color::srgb(0.10, 0.10, 0.11);
 const SPLITTER_BACKGROUND: Color = Color::srgb(0.08, 0.08, 0.09);
@@ -128,9 +143,15 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
         .id();
 
     // --- Middle row: Scene Tree | splitter | Viewport | splitter | Components ---
+    // `min_height` here is what actually protects the viewport's own floor
+    // on the *vertical* axis (F7): it's a direct child of `root`'s column
+    // layout, the same level the bottom row's splitter negotiates against,
+    // so this is the constraint that stops the bottom row growing tall
+    // enough to squeeze the viewport short — the viewport's own
+    // `min_height` below matters for its direct row-mates, not this.
     let middle_row = commands
         .spawn((
-            Node { width: Val::Percent(100.0), flex_grow: 1.0, flex_direction: FlexDirection::Row, ..Default::default() },
+            Node { width: Val::Percent(100.0), flex_grow: 1.0, flex_direction: FlexDirection::Row, min_height: Val::Px(VIEWPORT_MIN_HEIGHT_PX), ..Default::default() },
             ChildOf(root),
         ))
         .id();
@@ -138,7 +159,7 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
     let scene_panel = commands
         .spawn((
             ScenePanelSlot,
-            Node { width: Val::Px(side_width), height: Val::Percent(100.0), ..panel_node() },
+            Node { width: Val::Px(side_width), height: Val::Percent(100.0), min_width: Val::Px(SIDE_PANEL_MIN_PX), max_width: Val::Px(SIDE_PANEL_MAX_PX), ..panel_node() },
             BackgroundColor(PANEL_BACKGROUND),
             ChildOf(middle_row),
         ))
@@ -152,7 +173,7 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
     let viewport = commands
         .spawn((
             ViewportSlot,
-            Node { flex_grow: 1.0, height: Val::Percent(100.0), ..panel_node() },
+            Node { flex_grow: 1.0, height: Val::Percent(100.0), min_width: Val::Px(VIEWPORT_MIN_WIDTH_PX), min_height: Val::Px(VIEWPORT_MIN_HEIGHT_PX), ..panel_node() },
             BackgroundColor(VIEWPORT_BACKGROUND),
             ChildOf(middle_row),
         ))
@@ -171,7 +192,7 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
         .entity(inspector_panel)
         .insert((
             InspectorPanelSlot,
-            Node { width: Val::Px(side_width), height: Val::Percent(100.0), ..panel_node() },
+            Node { width: Val::Px(side_width), height: Val::Percent(100.0), min_width: Val::Px(SIDE_PANEL_MIN_PX), max_width: Val::Px(SIDE_PANEL_MAX_PX), ..panel_node() },
             BackgroundColor(PANEL_BACKGROUND),
             ChildOf(middle_row),
         ))
@@ -191,14 +212,14 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
         ChildOf(root),
     ));
     commands.entity(bottom_row).insert((
-        Node { width: Val::Percent(100.0), height: Val::Px(bottom_height), flex_direction: FlexDirection::Row, ..Default::default() },
+        Node { width: Val::Percent(100.0), height: Val::Px(bottom_height), flex_direction: FlexDirection::Row, min_height: Val::Px(BOTTOM_ROW_MIN_PX), max_height: Val::Px(BOTTOM_ROW_MAX_PX), ..Default::default() },
         ChildOf(root),
     ));
 
     let assets_panel = commands
         .spawn((
             AssetsPanelSlot,
-            Node { flex_grow: 2.0, height: Val::Percent(100.0), ..panel_node() },
+            Node { flex_grow: 2.0, height: Val::Percent(100.0), min_width: Val::Px(BOTTOM_PANEL_MIN_WIDTH_PX), ..panel_node() },
             BackgroundColor(PANEL_BACKGROUND),
             ChildOf(bottom_row),
         ))
@@ -216,7 +237,7 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
     let console_panel = commands
         .spawn((
             ConsolePanelSlot,
-            Node { flex_grow: 1.0, height: Val::Percent(100.0), ..panel_node() },
+            Node { flex_grow: 1.0, height: Val::Percent(100.0), min_width: Val::Px(BOTTOM_PANEL_MIN_WIDTH_PX), ..panel_node() },
             BackgroundColor(PANEL_BACKGROUND),
             ChildOf(bottom_row),
         ))
