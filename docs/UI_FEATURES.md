@@ -42,16 +42,14 @@
 
 ---
 
-## F3 — Inspector (Components) panel: Scrollbar เมื่อ field/component เยอะ
+## F3 — Inspector (Components) panel: Scrollbar เมื่อ field/component เยอะ ✅ implemented
 
-**สถานะปัจจุบัน:** ไม่มีเช่นกัน — [`bv_editor_inspector_panel/src/lib.rs`](../crates/bv_editor_inspector_panel/src/lib.rs) เดิน component ของ entity ที่เลือกแล้วเรนเดอร์ field เรียงต่อกันลง panel เดียว entity ที่มีหลาย component ที่มี field เยอะๆ (เช่น `Transform` + `PointLight` + custom component หลายตัว) จะล้นจอเหมือน F2
+**สถานะ:** ทำเสร็จแล้ว — ใช้ widget กลางจาก F2 (`bv_editor_ui::scrollbar`) ตรงๆ ไม่ต้องเขียนกลไก scroll ใหม่ ตามที่วางแผนไว้ การเปลี่ยนแปลงอยู่ใน [`bv_editor_inspector_panel/src/lib.rs`](../crates/bv_editor_inspector_panel/src/lib.rs):
+- `InspectorBody` ได้ `flex_grow: 1.0` + `min_height: Val::Px(0.0)` + `overflow: Overflow::scroll_y()` เหมือน Scene Tree's rows container ใน F2 พร้อม scrollbar track/thumb ข้างๆ
+- **ต่างจาก F2 ตรงตามสเปก:** `rebuild_inspector_ui` reset `ScrollPosition.y` กลับ 0 ทุกครั้งที่ rebuild จริง (ไม่ใช่แค่ตอน dirty flag ถูก set เฉยๆ) — ใช้ได้เพราะ `InspectorDirty` ถูก set จาก `Selection` เปลี่ยนแปลงเท่านั้น (`detect_selection_change`) ไม่มีสาเหตุอื่น ต่างจาก Scene Tree ที่ dirty มาจากทั้ง selection และ hierarchy เปลี่ยนแปลงปนกัน จึงต้อง "คงอยู่" แทน
+- เทสครอบคลุมทั้ง wiring (`scrollbar_thumb_targets_the_inspector_body_and_wheel_scrolls_it`) และพฤติกรรม reset (`switching_selection_resets_the_scroll_position`: scroll ไปที่ 123px ด้วยมือ แล้วสลับ selection แล้วต้องกลับเป็น 0)
 
-**สเปก:** เหมือน F2 ทุกข้อ (clip + wheel scroll + draggable thumb + คง scroll position เวลาสลับ field แต่ไม่สลับ entity) เพิ่มเติมเฉพาะของ Inspector:
-- scroll position **ต้อง reset กลับบนสุด** เมื่อเปลี่ยน entity ที่เลือก (สลับ selection แล้วเห็น component แรกก่อนเสมอ ไม่ใช่ scroll ค้างตำแหน่งเดิมของ entity ก่อนหน้า) — ตรงข้ามกับ F2 ที่อยากให้ scroll "คงอยู่" ตอน tree rebuild เล็กน้อย เพราะ context ต่างกัน (สลับ entity ทั้งตัว vs. hierarchy ขยับนิดหน่อย)
-
-**ทางทำ:** ใช้ widget กลางจาก F2 (`bv_editor_ui::scrollbar`) ตรงๆ ครอบพื้นที่ field list ของ Inspector panel ไม่ต้องเขียนกลไก scroll ใหม่
-
-**Phase:** อยู่ในขอบเขต Phase 3 เดิม (Inspector ผ่าน bevy_reflect) — เป็นของที่ควรเข้าไปพร้อมกับตอนที่ inspector list ยาวขึ้นจริง ไม่จำเป็นต้องรอ
+**Phase:** อยู่ในขอบเขต Phase 3 เดิม (Inspector ผ่าน bevy_reflect) ตามที่วางแผนไว้
 
 ---
 
@@ -134,7 +132,7 @@
 1. ~~**F1** (row highlight)~~ ✅ เสร็จแล้ว
 2. ~~**F2** (Scene Tree scrollbar)~~ ✅ เสร็จแล้ว — widget กลาง `bv_editor_ui::scrollbar` พร้อมให้ F3 ใช้ซ้ำ
 3. ~~**F7** (min/max ที่ยึดอยู่จริง)~~ ✅ เสร็จแล้ว — ทำได้เร็วกว่าคาดเพราะใช้ `Node.min_*`/`max_*` ของ `bevy_ui` ตรงๆ
-4. **F3** (Components panel scrollbar) — ต่อ widget จาก F2 เข้ากับ Inspector panel เท่านั้น
+4. ~~**F3** (Components panel scrollbar)~~ ✅ เสร็จแล้ว — ต่อ widget จาก F2 เข้ากับ Inspector panel ตามแผน
 5. **F4 ส่วน cursor feedback** — เล็ก อิสระ แทรกเมื่อไหร่ก็ได้
 6. **F6 ขั้นต่ำ** (`IconRegistry` + วาด icon เดี่ยวได้) — โครงสร้างพื้นฐานที่ F5 ต้องใช้
 7. **F5** (docking) — ก้อนใหญ่สุด เสี่ยงบานปลายสุด ทำหลังสุด ตรงกับ Phase 10 เดิมของ DESIGN.md รวม F4 ส่วน persist layout เข้าไปพร้อมกัน

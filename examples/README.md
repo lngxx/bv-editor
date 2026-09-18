@@ -73,6 +73,12 @@ cargo run -p ui_gallery
   Scene Tree panel เริ่มต้นได้ — ลองหมุนล้อเมาส์เหนือทรี หรือลากแถบเทาบางๆ
   ทางขวาของทรี (scrollbar thumb — โผล่เฉพาะตอนแถวล้นเท่านั้น) ถ้าไม่ล้น ลอง
   ลากแถบ splitter ระหว่าง Scene Tree/Viewport ให้แคบลงก่อน
+- **Components panel scrollbar (F3)** — เลือก `Crate A`/`Crate B` แล้วดู
+  Components panel ขวา: `Transform` (7 field) + `WidgetShowcase` (10 field)
+  รวมกันมักล้นพื้นที่เริ่มต้นแล้ว scrollbar ทำงานแบบเดียวกับ F2 ทุกอย่าง
+  ยกเว้นข้อเดียว — ลองเลื่อน scroll ลงไปก่อน แล้วสลับไปเลือก entity อื่น
+  (เช่น `Crate C`) จะเห็นว่า scroll เด้งกลับขึ้นบนสุดทันที (ตั้งใจ ต่างจาก F2
+  ที่ scroll ของ Scene Tree ควรคงตำแหน่งไว้ข้าม rebuild เล็กๆ)
 
 ## `third_party_extension`
 

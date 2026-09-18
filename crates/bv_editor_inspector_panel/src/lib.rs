@@ -30,10 +30,13 @@ use bevy_ui::prelude::*;
 
 use bv_editor_core::Selection;
 use bv_editor_reflect_ui::spawn_component_fields;
-use bv_editor_ui::InspectorPanelSlot;
+use bv_editor_ui::{InspectorPanelSlot, ScrollbarThumb};
 
 const SECTION_HEADER_COLOR: Color = Color::srgb(0.85, 0.85, 0.85);
 const EMPTY_HINT_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
+const SCROLLBAR_TRACK_WIDTH_PX: f32 = 8.0;
+const SCROLLBAR_TRACK_BACKGROUND: Color = Color::srgb(0.12, 0.12, 0.13);
+const SCROLLBAR_THUMB_BACKGROUND: Color = Color::srgb(0.35, 0.35, 0.4);
 
 /// Forces [`rebuild_inspector_ui`] to redraw on its next run. Starts `true`
 /// so the (possibly already-nonempty) selection is reflected on the first
@@ -73,6 +76,15 @@ impl Plugin for InspectorPanelPlugin {
         app.init_resource::<AppTypeRegistry>();
         app.register_type::<Transform>();
 
+        // Same reasoning as `bv_editor_scene_panel::ScenePanelPlugin`'s own
+        // guard: this panel's tests spawn a bare `InspectorPanelSlot`
+        // without the full `EditorUiPlugin`, so the Components panel
+        // scrollbar (docs/UI_FEATURES.md F3) needs its driving systems here
+        // too.
+        if !app.is_plugin_added::<bv_editor_ui::ScrollbarPlugin>() {
+            app.add_plugins(bv_editor_ui::ScrollbarPlugin);
+        }
+
         app.init_resource::<InspectorDirty>();
         // Same `Startup`-ordering hazard `bv_editor_scene_panel` documents:
         // `InspectorPanelSlot` is spawned by `bv_editor_ui`'s own `Startup`
@@ -83,11 +95,45 @@ impl Plugin for InspectorPanelPlugin {
     }
 }
 
+/// Builds the Inspector's chrome: [`InspectorBody`] (clipped + scrollable,
+/// docs/UI_FEATURES.md F3 — same shape as Scene Tree's F2) next to its
+/// scrollbar track/thumb. See `bv_editor_scene_panel::spawn_scene_panel_chrome`'s
+/// doc comment for why `flex_grow`/`min_height: Val::Px(0.0)` are needed for
+/// `Overflow::scroll_y()` to actually have something to clip against.
 fn spawn_inspector_chrome(mut commands: Commands, slots: Query<Entity, With<InspectorPanelSlot>>) {
     let Ok(slot) = slots.single() else { return };
-    commands.entity(slot).with_children(|panel| {
-        panel.spawn((InspectorBody, Node { flex_direction: FlexDirection::Column, margin: UiRect::top(Val::Px(4.0)), ..Default::default() }));
-    });
+
+    let scroll_row = commands
+        .spawn((
+            Node { flex_direction: FlexDirection::Row, flex_grow: 1.0, min_height: Val::Px(0.0), margin: UiRect::top(Val::Px(4.0)), ..Default::default() },
+            ChildOf(slot),
+        ))
+        .id();
+
+    let body = commands
+        .spawn((
+            InspectorBody,
+            Interaction::default(),
+            Node { flex_direction: FlexDirection::Column, flex_grow: 1.0, min_height: Val::Px(0.0), overflow: Overflow::scroll_y(), ..Default::default() },
+            ChildOf(scroll_row),
+        ))
+        .id();
+
+    let track = commands
+        .spawn((
+            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
+            BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
+            ChildOf(scroll_row),
+        ))
+        .id();
+
+    commands.spawn((
+        ScrollbarThumb { target: body },
+        Interaction::default(),
+        Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), top: Val::Px(0.0), ..Default::default() },
+        BackgroundColor(SCROLLBAR_THUMB_BACKGROUND),
+        ChildOf(track),
+    ));
 }
 
 fn detect_selection_change(selection: Res<Selection>, mut dirty: ResMut<InspectorDirty>) {
@@ -119,6 +165,15 @@ fn rebuild_inspector_ui(world: &mut World) {
         container
     };
     world.entity_mut(container).despawn_children();
+    // docs/UI_FEATURES.md F3: unlike the Scene Tree's scroll position
+    // (which should survive a tree rebuild), this one should *not* survive
+    // a rebuild — every rebuild here is a selection change (the only thing
+    // that sets `InspectorDirty`), and switching entities should always
+    // show its first component, not wherever the previous entity's list
+    // happened to be scrolled to.
+    if let Some(mut scroll) = world.get_mut::<ScrollPosition>(container) {
+        scroll.0.y = 0.0;
+    }
 
     let Some(entity) = world.resource::<Selection>().primary() else {
         let mut commands = world.commands();
@@ -230,6 +285,60 @@ mod tests {
         step(&mut app, 1);
 
         assert_eq!(app.world().get::<Transform>(cube).unwrap().translation.x, 7.5);
+    }
+
+    #[test]
+    fn scrollbar_thumb_targets_the_inspector_body_and_wheel_scrolls_it() {
+        use bevy_input::mouse::{MouseScrollUnit, MouseWheel};
+        use bevy_input::touch::TouchPhase;
+        use bevy_ui::ComputedNode;
+
+        let mut app = setup();
+        let body = {
+            let world = app.world_mut();
+            let mut bodies = world.query_filtered::<Entity, With<InspectorBody>>();
+            bodies.single(world).expect("inspector body should exist")
+        };
+        {
+            let world = app.world_mut();
+            let mut thumbs = world.query::<&ScrollbarThumb>();
+            assert!(thumbs.iter(world).any(|thumb| thumb.target == body), "a scrollbar thumb targeting the inspector body should exist");
+        }
+
+        // Same reasoning as `bv_editor_scene_panel`'s equivalent test:
+        // headless tests never run `ui_layout_system`, so simulate a real
+        // post-layout state directly on `ComputedNode`.
+        app.world_mut().entity_mut(body).insert((
+            Interaction::Hovered,
+            ComputedNode { size: Vec2::new(200.0, 100.0), content_size: Vec2::new(200.0, 400.0), inverse_scale_factor: 1.0, ..Default::default() },
+        ));
+        step(&mut app, 1);
+
+        app.world_mut().write_message(MouseWheel { unit: MouseScrollUnit::Pixel, x: 0.0, y: -40.0, window: Entity::PLACEHOLDER, phase: TouchPhase::Moved });
+        step(&mut app, 1);
+
+        assert_eq!(app.world().get::<bevy_ui::ScrollPosition>(body).unwrap().0.y, 40.0);
+    }
+
+    #[test]
+    fn switching_selection_resets_the_scroll_position() {
+        let mut app = setup();
+        let cube = app.world_mut().spawn((Transform::default(), Name::new("Cube"))).id();
+        let sphere = app.world_mut().spawn((Transform::default(), Name::new("Sphere"))).id();
+        app.world_mut().resource_mut::<Selection>().select_only(cube);
+        step(&mut app, 1);
+
+        let body = {
+            let world = app.world_mut();
+            let mut bodies = world.query_filtered::<Entity, With<InspectorBody>>();
+            bodies.single(world).expect("inspector body should exist")
+        };
+        app.world_mut().get_mut::<bevy_ui::ScrollPosition>(body).unwrap().0.y = 123.0;
+
+        app.world_mut().resource_mut::<Selection>().select_only(sphere);
+        step(&mut app, 1);
+
+        assert_eq!(app.world().get::<bevy_ui::ScrollPosition>(body).unwrap().0.y, 0.0);
     }
 
     #[test]
