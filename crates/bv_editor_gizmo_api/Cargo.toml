@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_gizmo_api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Gizmo framework: Manipulator/ComponentGizmo traits, registry, shared ray/plane math helpers."
+
+[dependencies]

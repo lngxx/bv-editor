@@ -95,10 +95,12 @@ bv-editor/
 
 ## 4. เทคโนโลยีที่เลือกใช้ (Bevy built-in ก่อนเสมอ)
 
+**Bevy version ที่ล็อกไว้ทั้งโปรเจกต์ (Phase 0): `0.19.1`** (เวอร์ชัน stable ล่าสุดตอนเริ่ม, pin แบบ exact `=0.19.1` ทั้ง workspace ผ่าน `[workspace.dependencies]` ใน root `Cargo.toml` + คอมมิต `Cargo.lock`)
+
 | ความต้องการ | เลือกใช้ | หมายเหตุ |
 |---|---|---|
 | UI layout/rendering | `bevy_ui` | ตามที่เลือก — native, ไม่มี docking/tree/property widget สำเร็จรูป ต้องสร้างเอง (phase 1) |
-| Widget interaction พื้นฐาน (button, slider, checkbox state) | `bevy_core_widgets` / `bevy_feathers` (ถ้ามีใน Bevy เวอร์ชันที่ใช้) | Bevy กำลังพัฒนา headless widget set สำหรับงานสาย tool/editor โดยเฉพาะ — **ต้องเช็กว่ามีจริงและ API หน้าตาแบบไหนใน Bevy version ที่ล็อกไว้ตอนเริ่ม Phase 0** ถ้ายังไม่พร้อมค่อย fallback เขียน state machine เองบน `Interaction` component ปกติ |
+| Widget interaction พื้นฐาน (button, slider, checkbox state) | `bevy_ui_widgets` (headless state machine) + `bevy_feathers` (styled editor widgets) | **ตรวจแล้วใน Phase 0:** ชื่อ `bevy_core_widgets` ที่ตั้งเป้าไว้ตอนแรกเป็นแค่ placeholder crate (`0.0.0`, ไม่มีโค้ดจริง) — ของจริงคือ `bevy_ui_widgets` ("Unstyled common widgets for Bevy Engine") ซึ่ง `bevy_feathers` ("A collection of UI widgets for building editors and utilities in Bevy") พึ่งอยู่ ทั้งคู่ stable ที่ `0.19.1` ตรงกับ Bevy version ที่ล็อกไว้ทั้งโปรเจกต์ (ดูข้อ 4 บรรทัดแรก) ไม่ต้อง fallback เขียน state machine เองบน `Interaction` |
 | Reflection สำหรับ inspector อัตโนมัติ | `bevy_reflect` + `AppTypeRegistry` | หัวใจของ inspector — component ไหน derive `Reflect` แล้วจะโผล่ให้แก้ได้อัตโนมัติโดยไม่ต้องเขียน UI เฉพาะทีละ type |
 | Selection ใน viewport | `bevy_picking` (mesh picking backend) | built-in ใน Bevy แล้ว ไม่ต้องพึ่ง `bevy_mod_picking` ภายนอก |
 | Gizmo วาดเส้น/ลูกศร transform handle | `bevy_gizmos` | built-in, ใช้วาด outline ของ selection และแกน translate/rotate/scale — สถาปัตยกรรมแบบขยายได้อยู่ในข้อ 7 |

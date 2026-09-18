@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Docking/shell framework on bevy_ui: splitter, tab bar, tree widget, property grid."
+
+[dependencies]

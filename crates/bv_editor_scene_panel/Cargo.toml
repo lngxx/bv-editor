@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_scene_panel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Built-in extension: the Scene Tree panel."
+
+[dependencies]

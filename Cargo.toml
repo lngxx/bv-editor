@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/*",
+    "examples/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+# Bevy version locked project-wide (Phase 0 requirement, docs/DESIGN.md section 9).
+# Every bevy_* subcrate below must stay in lockstep with `bevy` itself since they
+# are published together from the same repo/version.
+[workspace.dependencies]
+bevy = { version = "=0.19.1", default-features = false }
+bevy_app = { version = "=0.19.1", default-features = false }
+bevy_ecs = { version = "=0.19.1", default-features = false }
+bevy_log = { version = "=0.19.1", default-features = false }
+
+bv_editor_core = { path = "crates/bv_editor_core" }
+bv_editor_ui = { path = "crates/bv_editor_ui" }
+bv_editor_reflect_ui = { path = "crates/bv_editor_reflect_ui" }
+bv_editor_extension = { path = "crates/bv_editor_extension" }
+bv_editor_undo = { path = "crates/bv_editor_undo" }
+bv_editor_scene_panel = { path = "crates/bv_editor_scene_panel" }
+bv_editor_inspector_panel = { path = "crates/bv_editor_inspector_panel" }
+bv_editor_assets_panel = { path = "crates/bv_editor_assets_panel" }
+bv_editor_console_panel = { path = "crates/bv_editor_console_panel" }
+bv_editor_gizmo_api = { path = "crates/bv_editor_gizmo_api" }
+bv_editor_gizmos_builtin = { path = "crates/bv_editor_gizmos_builtin" }
+bv_editor_viewport = { path = "crates/bv_editor_viewport" }
+bv_editor_test_utils = { path = "crates/bv_editor_test_utils" }
+bv_editor = { path = "crates/bv_editor" }

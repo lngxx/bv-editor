@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_reflect_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generic field editor generated from bevy_reflect + TypeRegistry, plus the asset-reference (Handle<T>) picker widget."
+
+[dependencies]

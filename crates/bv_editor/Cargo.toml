@@ -1,0 +1,24 @@
+[package]
+name = "bv_editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "bv-editor facade crate: cargo add bv_editor, then app.add_plugins(EditorPlugin)."
+
+[dependencies]
+bevy = { workspace = true, default-features = true }
+bv_editor_core = { workspace = true }
+bv_editor_ui = { workspace = true }
+bv_editor_reflect_ui = { workspace = true }
+bv_editor_extension = { workspace = true }
+bv_editor_undo = { workspace = true }
+bv_editor_scene_panel = { workspace = true }
+bv_editor_inspector_panel = { workspace = true }
+bv_editor_assets_panel = { workspace = true }
+bv_editor_console_panel = { workspace = true }
+bv_editor_gizmo_api = { workspace = true }
+bv_editor_gizmos_builtin = { workspace = true }
+bv_editor_viewport = { workspace = true }
+
+[dev-dependencies]
+bv_editor_test_utils = { workspace = true }

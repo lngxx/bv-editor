@@ -1,0 +1,9 @@
+[package]
+name = "bv_editor_test_utils"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless test harness for bv-editor: build an App with no window, step frames, simulate input."
+
+[dependencies]
+bevy = { workspace = true }

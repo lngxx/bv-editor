@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_console_panel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Built-in extension: the Console/Log panel (reads Bevy's tracing log)."
+
+[dependencies]

@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_extension"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Extension API: the EditorExtension trait, EditorAppExt (register_panel, ...), and the panel registry resource."
+
+[dependencies]

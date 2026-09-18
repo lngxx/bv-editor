@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_undo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Undo/redo: the Command trait and the UndoStack resource."
+
+[dependencies]

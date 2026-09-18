@@ -1,0 +1,13 @@
+[package]
+name = "bv_editor_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "bv-editor core: state, schedule sets, central resources, and the EditorCorePlugin entrypoint."
+
+[dependencies]
+bevy_app = { workspace = true }
+bevy_log = { workspace = true }
+
+[dev-dependencies]
+bv_editor_test_utils = { workspace = true }

@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_gizmos_builtin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Built-in gizmos: Translate/Rotate/Scale manipulators and example component gizmos (light, camera frustum)."
+
+[dependencies]

@@ -1,0 +1,8 @@
+[package]
+name = "bv_editor_viewport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Editor camera (orbit/pan/zoom), render-to-texture, picking, and wiring the gizmo API into the frame loop."
+
+[dependencies]
