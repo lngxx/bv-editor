@@ -41,6 +41,13 @@ use bevy_state::state::States;
 #[derive(Component, Clone, Copy, Default, Debug)]
 pub struct EditorOnly;
 
+/// Marks the editor's own viewport camera (docs/DESIGN.md section 7.1),
+/// distinct from whatever camera the host game itself renders with. Always
+/// paired with [`EditorOnly`] so it never leaks into the Scene Tree or a
+/// saved scene.
+#[derive(Component, Clone, Copy, Default, Debug)]
+pub struct EditorCamera;
+
 /// The editor's own high-level mode, independent of whatever state machine
 /// the host game runs. `Editing`/`Paused` are equivalent for most systems
 /// today (both mean "the editor is visible and driving the world"); Phase 9

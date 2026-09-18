@@ -13,7 +13,7 @@ use bv_editor::EditorPlugin;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(EditorPlugin)
+        .add_plugins(EditorPlugin::default())
         .add_systems(Startup, setup)
         .run();
 }

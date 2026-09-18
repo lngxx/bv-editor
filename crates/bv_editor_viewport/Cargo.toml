@@ -6,3 +6,17 @@ license.workspace = true
 description = "Editor camera (orbit/pan/zoom), render-to-texture, picking, and wiring the gizmo API into the frame loop."
 
 [dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_asset = { workspace = true }
+bevy_image = { workspace = true }
+bevy_camera = { workspace = true }
+bevy_render = { workspace = true }
+bevy_transform = { workspace = true }
+bevy_math = { workspace = true }
+bevy_ui = { workspace = true }
+bv_editor_core = { workspace = true }
+bv_editor_ui = { workspace = true }
+
+[dev-dependencies]
+bv_editor_test_utils = { workspace = true }

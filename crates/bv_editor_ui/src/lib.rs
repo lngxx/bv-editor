@@ -43,14 +43,33 @@ pub struct EditorShellSet;
 /// Spawns the shell on startup, drives its splitters every frame, and runs
 /// the generic drag-and-drop framework consumers (the Scene Tree, from Phase
 /// 2 on) build on top of.
-#[derive(Default)]
-pub struct EditorUiPlugin;
+///
+/// `ui_scale` sets `bevy_ui`'s own [`UiScale`] resource, which uniformly
+/// scales every panel's layout *and* text — the whole shell is built from
+/// `bevy_ui`'s default sizes (20px text, etc.), which reads oversized at
+/// typical desktop window sizes, so this defaults to `0.5` rather than
+/// `bevy_ui`'s own default of `1.0`. Override it per host game with
+/// `EditorUiPlugin { ui_scale: 0.7 }` (or via [`bv_editor::EditorPlugin`]'s
+/// own `ui_scale` field, which forwards here) — [`UiScale`] itself is also
+/// just an ordinary resource, so `ResMut<UiScale>` works too if something
+/// needs to change it at runtime (e.g. a future user-facing zoom setting).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EditorUiPlugin {
+    pub ui_scale: f32,
+}
+
+impl Default for EditorUiPlugin {
+    fn default() -> Self {
+        Self { ui_scale: 0.5 }
+    }
+}
 
 impl Plugin for EditorUiPlugin {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<DragAndDropPlugin>() {
             app.add_plugins(DragAndDropPlugin);
         }
+        app.insert_resource(bevy_ui::UiScale(self.ui_scale));
         app.add_systems(Startup, spawn_shell_on_startup.in_set(EditorShellSet));
         app.add_systems(Update, splitter_drag_system);
     }
@@ -74,7 +93,7 @@ mod tests {
     #[test]
     fn plugin_builds_without_panicking_headless() {
         let mut app = bv_editor_test_utils::headless_app();
-        app.add_plugins(EditorUiPlugin);
+        app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
     }
 
@@ -83,7 +102,7 @@ mod tests {
         // No `Window` resource exists under `MinimalPlugins`, so startup
         // should fall back to `LayoutBreakpoint::Normal` rather than panic.
         let mut app = bv_editor_test_utils::headless_app();
-        app.add_plugins(EditorUiPlugin);
+        app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
 
         let world = app.world_mut();
@@ -118,7 +137,7 @@ mod tests {
         use bevy_ui::{Interaction, Val};
 
         let mut app = bv_editor_test_utils::headless_app();
-        app.add_plugins(EditorUiPlugin);
+        app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
 
         let world = app.world_mut();

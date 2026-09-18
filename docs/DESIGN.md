@@ -314,6 +314,7 @@ Drag asset เข้า viewport (phase 5), ลาก field เข้า inspect
 - **เทส:** headless test เลือก entity ที่มี `Transform`, จำลองแก้ `translation.x` ผ่าน inspector แล้วตรวจ component จริงในเวิลด์เปลี่ยนค่าตรงตามที่ set
 
 ### Phase 4 — 3D viewport, editor camera & extensible gizmo (ดูรายละเอียดเต็มในข้อ 7)
+- **ทำไปแล้วบางส่วนก่อนเวลา (นอกลำดับ):** ระหว่าง Phase 2 มี feedback ให้ viewport แสดงภาพจากกล้องจริงๆ จึงทำ `bv_editor_viewport` ขั้นต่ำไปก่อน — spawn `EditorCamera` (+ `EditorOnly`) เรนเดอร์ลง `RenderTarget::Image` แล้วแปะใน Viewport slot ผ่าน `bevy_ui::widget::ViewportNode` (widget สำเร็จรูปของ bevy เอง ซึ่ง resize render target ตาม panel ให้อัตโนมัติอยู่แล้ว แก้ความเสี่ยงเรื่อง resize ในข้อ 10 ไปในตัว) ตำแหน่งกล้องยังเป็นค่าคงที่มองจากมุมเดียว **ยังไม่ทำ**: orbit/pan/zoom controller, gizmo API/manipulator ทั้งหมด, viewport picking, และ gate ตาม `EditorState::Editing`/`Paused` (ข้อ 7.1) — สามอย่างหลังยังเป็นสโคปของ Phase 4 เต็มรูปแบบ ทำต่อตอนถึงคิว
 - ทำ `EditorCamera` เรนเดอร์ลง `RenderTarget::Image` + แปะใน panel กลางด้วย `ImageNode`, เพิ่ม orbit/pan/zoom controller — ใส่ `EditorOnly` (ข้อ 8.3) ให้กล้องนี้ตั้งแต่สร้างเลย เพื่อไม่ให้หลุดเข้า scene ที่ save ใน phase 6
 - สร้าง `bv_editor_gizmo_api` (trait `Manipulator`/`ComponentGizmo`, registry, shared ray/plane math helper) ก่อน แล้วค่อย implement `bv_editor_gizmos_builtin` (Translate/Rotate/Scale) บน API นั้น — **ห้าม built-in ลัดเข้า viewport ตรงๆ โดยไม่ผ่าน registry**
 - toolbar อ่าน `ManipulatorRegistry` มา render ปุ่ม (ไม่ hardcode Translate/Rotate/Scale)

@@ -2,7 +2,7 @@
 //!
 //! ```ignore
 //! app.add_plugins(GamePlugin)   // normal game code, unaware of the editor
-//!    .add_plugins(EditorPlugin); // one line adds the whole editor
+//!    .add_plugins(EditorPlugin::default()); // one line adds the whole editor
 //! ```
 //!
 //! It re-exports every bv-editor sub-crate so third-party extensions and
@@ -37,20 +37,34 @@ pub use bv_editor_viewport as viewport;
 pub use bv_editor_core::EditorCorePlugin;
 pub use bv_editor_scene_panel::ScenePanelPlugin;
 pub use bv_editor_ui::EditorUiPlugin;
+pub use bv_editor_viewport::ViewportPlugin;
 
 /// The single plugin a host game adds to embed bv-editor.
 ///
 /// Composes [`EditorCorePlugin`] (state, `HotkeyRegistry`), [`EditorUiPlugin`]
-/// (the shell layout), and [`ScenePanelPlugin`] (the Scene Tree), and logs
-/// successful load.
-#[derive(Default)]
-pub struct EditorPlugin;
+/// (the shell layout), [`ScenePanelPlugin`] (the Scene Tree), and
+/// [`ViewportPlugin`] (the 3D preview camera), and logs successful load.
+///
+/// `ui_scale` forwards to [`EditorUiPlugin::ui_scale`] — the whole shell's
+/// size, uniformly, defaulting to half the unscaled `bevy_ui` size:
+/// `app.add_plugins(EditorPlugin { ui_scale: 0.7, ..default() })` to change it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EditorPlugin {
+    pub ui_scale: f32,
+}
+
+impl Default for EditorPlugin {
+    fn default() -> Self {
+        Self { ui_scale: EditorUiPlugin::default().ui_scale }
+    }
+}
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EditorCorePlugin);
-        app.add_plugins(EditorUiPlugin);
+        app.add_plugins(EditorUiPlugin { ui_scale: self.ui_scale });
         app.add_plugins(ScenePanelPlugin);
+        app.add_plugins(ViewportPlugin);
         info!("bv_editor: EditorPlugin loaded successfully");
     }
 }
@@ -58,11 +72,24 @@ impl Plugin for EditorPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::asset::{AssetApp, AssetPlugin};
+    use bevy::image::Image;
+
+    /// `bv_editor_test_utils::headless_app()` is `MinimalPlugins` and has no
+    /// asset support; `EditorPlugin` now includes `ViewportPlugin`, which
+    /// needs `Assets<Image>` for its render target, so the real composed
+    /// plugin can't be tested headlessly without adding that first.
+    fn setup() -> App {
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(AssetPlugin::default());
+        app.init_asset::<Image>();
+        app
+    }
 
     #[test]
     fn editor_plugin_builds_without_panicking() {
-        let mut app = bv_editor_test_utils::headless_app();
-        app.add_plugins(EditorPlugin);
+        let mut app = setup();
+        app.add_plugins(EditorPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
     }
 
@@ -81,8 +108,8 @@ mod tests {
         use bevy::ecs::hierarchy::Children;
         use bevy::ecs::query::With;
 
-        let mut app = bv_editor_test_utils::headless_app();
-        app.add_plugins(EditorPlugin);
+        let mut app = setup();
+        app.add_plugins(EditorPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
 
         let world = app.world_mut();
