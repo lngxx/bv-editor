@@ -99,12 +99,15 @@ fn title_text(label: &'static str) -> impl Bundle {
 }
 
 /// Spawn a vertical (width-resizing) splitter bar as a child of `parent`, targeting `target`.
-fn spawn_vertical_splitter(commands: &mut Commands, parent: Entity, target: Entity) {
+/// `invert` must be `true` when the splitter is `target`'s *left* edge (the
+/// Components panel, to the right of the viewport) rather than its right
+/// edge (the Scene Tree, to the left of the viewport) — see [`Splitter::invert`].
+fn spawn_vertical_splitter(commands: &mut Commands, parent: Entity, target: Entity, invert: bool) {
     commands.spawn((
         Node { width: Val::Px(SPLITTER_THICKNESS_PX), height: Val::Percent(100.0), ..Default::default() },
         BackgroundColor(SPLITTER_BACKGROUND),
         Interaction::default(),
-        Splitter { target, axis: SplitterAxis::Horizontal, min_px: SIDE_PANEL_MIN_PX, max_px: SIDE_PANEL_MAX_PX },
+        Splitter { target, axis: SplitterAxis::Horizontal, min_px: SIDE_PANEL_MIN_PX, max_px: SIDE_PANEL_MAX_PX, invert },
         ChildOf(parent),
     ));
 }
@@ -168,7 +171,7 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
         })
         .id();
 
-    spawn_vertical_splitter(commands, middle_row, scene_panel);
+    spawn_vertical_splitter(commands, middle_row, scene_panel, false);
 
     let viewport = commands
         .spawn((
@@ -187,7 +190,7 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
     // now, insert its real components (and `ChildOf`, which fixes its
     // position in the parent's children order) further down.
     let inspector_panel = commands.spawn_empty().id();
-    spawn_vertical_splitter(commands, middle_row, inspector_panel);
+    spawn_vertical_splitter(commands, middle_row, inspector_panel, true);
     commands
         .entity(inspector_panel)
         .insert((
@@ -208,7 +211,7 @@ pub fn spawn_editor_shell(commands: &mut Commands, breakpoint: LayoutBreakpoint)
         Node { width: Val::Percent(100.0), height: Val::Px(SPLITTER_THICKNESS_PX), ..Default::default() },
         BackgroundColor(SPLITTER_BACKGROUND),
         Interaction::default(),
-        Splitter { target: bottom_row, axis: SplitterAxis::Vertical, min_px: BOTTOM_ROW_MIN_PX, max_px: BOTTOM_ROW_MAX_PX },
+        Splitter { target: bottom_row, axis: SplitterAxis::Vertical, min_px: BOTTOM_ROW_MIN_PX, max_px: BOTTOM_ROW_MAX_PX, invert: true },
         ChildOf(root),
     ));
     commands.entity(bottom_row).insert((

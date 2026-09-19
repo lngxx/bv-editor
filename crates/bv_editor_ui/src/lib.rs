@@ -22,12 +22,12 @@ mod splitter;
 
 pub use breakpoint::{bottom_panel_height_px, breakpoint_for_width, side_panel_width_px, LayoutBreakpoint};
 pub use dnd::{drag_and_drop_system, DragAndDropPlugin, DragDropped, DragPayload, DragSource, DragState, DropTarget};
-pub use scrollbar::{clamp_scroll, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarPlugin, ScrollbarThumb};
+pub use scrollbar::{clamp_scroll, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarAxis, ScrollbarPlugin, ScrollbarThumb};
 pub use shell::{
     spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, EditorShellEntities, EditorShellRoot,
     InspectorPanelSlot, ScenePanelSlot, StatusBarSlot, ToolbarSlot, ViewportSlot,
 };
-pub use splitter::{resize_value, splitter_drag_system, Splitter, SplitterAxis};
+pub use splitter::{resize_value, splitter_cursor_system, splitter_drag_system, Splitter, SplitterAxis};
 
 use bevy_app::{App, Plugin, Startup, Update};
 use bevy_ecs::prelude::*;
@@ -75,8 +75,9 @@ impl Plugin for EditorUiPlugin {
             app.add_plugins(ScrollbarPlugin);
         }
         app.insert_resource(bevy_ui::UiScale(self.ui_scale));
+        app.init_resource::<splitter::ActiveSplitterDrag>();
         app.add_systems(Startup, spawn_shell_on_startup.in_set(EditorShellSet));
-        app.add_systems(Update, splitter_drag_system);
+        app.add_systems(Update, (splitter_drag_system, splitter_cursor_system).chain());
     }
 }
 
@@ -213,5 +214,91 @@ mod tests {
 
         assert_eq!(before, Val::Px(side_panel_width_px(LayoutBreakpoint::Normal)));
         assert_eq!(after, Val::Px(side_panel_width_px(LayoutBreakpoint::Normal) + 40.0));
+    }
+
+    #[test]
+    fn inverted_splitter_drag_resizes_its_target_opposite_the_mouse() {
+        // The Components panel's splitter is its *left* edge (target is to
+        // the right of the splitter, unlike the Scene Tree above where the
+        // target is to the left) — dragging the mouse right must shrink it,
+        // not grow it, or the panel visibly moves the opposite way from the
+        // mouse. Same idea for the bottom row's splitter (its *top* edge):
+        // dragging down must shrink it.
+        use bevy_input::mouse::{MouseButton, MouseMotion};
+        use bevy_input::ButtonInput;
+        use bevy_math::Vec2;
+        use bevy_ui::{Interaction, Val};
+
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(EditorUiPlugin::default());
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let world = app.world_mut();
+        let mut inspector_panels = world.query_filtered::<Entity, With<InspectorPanelSlot>>();
+        let target = inspector_panels.single(world).expect("inspector panel slot should exist");
+
+        let mut splitters = world.query::<(Entity, &Splitter)>();
+        let splitter_entity = splitters
+            .iter(world)
+            .find(|(_, s)| s.target == target)
+            .map(|(e, _)| e)
+            .expect("a splitter targeting the inspector panel should exist");
+
+        world.entity_mut(splitter_entity).insert(Interaction::Pressed);
+        world.resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        world.write_message(MouseMotion { delta: Vec2::new(40.0, 0.0) });
+
+        let before = world.get::<Node>(target).unwrap().width;
+        bv_editor_test_utils::step(&mut app, 1);
+        let after = app.world().get::<Node>(target).unwrap().width;
+
+        assert_eq!(before, Val::Px(side_panel_width_px(LayoutBreakpoint::Normal)));
+        assert_eq!(
+            after,
+            Val::Px(side_panel_width_px(LayoutBreakpoint::Normal) - 40.0),
+            "dragging right on the Components panel's left-edge splitter should shrink it, not grow it"
+        );
+    }
+
+    #[test]
+    fn hovering_a_splitter_sets_the_resize_cursor_and_clears_it_after() {
+        // docs/UI_FEATURES.md F4: hovering (not just dragging) a splitter
+        // should show a resize cursor, and it should go back to nothing once
+        // the pointer leaves.
+        use bevy_ui::Interaction;
+        use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon, Window};
+
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(EditorUiPlugin::default());
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let window = app.world_mut().spawn((Window::default(), PrimaryWindow)).id();
+
+        let world = app.world_mut();
+        let mut scene_panels = world.query_filtered::<Entity, With<ScenePanelSlot>>();
+        let target = scene_panels.single(world).expect("scene panel slot should exist");
+        let mut splitters = world.query::<(Entity, &Splitter)>();
+        let splitter_entity = splitters
+            .iter(world)
+            .find(|(_, s)| s.target == target)
+            .map(|(e, _)| e)
+            .expect("a splitter targeting the scene panel should exist");
+
+        world.entity_mut(splitter_entity).insert(Interaction::Hovered);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let icon = app
+            .world()
+            .get::<CursorIcon>(window)
+            .expect("hovering a splitter should set a cursor icon");
+        assert_eq!(*icon, CursorIcon::System(SystemCursorIcon::EwResize));
+
+        app.world_mut().entity_mut(splitter_entity).insert(Interaction::None);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        assert!(
+            app.world().get::<CursorIcon>(window).is_none(),
+            "cursor icon should clear once nothing is hovered/dragging"
+        );
     }
 }

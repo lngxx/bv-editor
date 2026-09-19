@@ -10,6 +10,7 @@ use bevy_ecs::prelude::*;
 use bevy_input::ButtonInput;
 use bevy_input::mouse::{AccumulatedMouseMotion, MouseButton};
 use bevy_ui::{Interaction, Node, Val};
+use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 
 /// Which dimension a splitter resizes on its target node.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -29,6 +30,13 @@ pub struct Splitter {
     pub axis: SplitterAxis,
     pub min_px: f32,
     pub max_px: f32,
+    /// Whether `target` sits on the *far* side of the splitter from the
+    /// origin of its axis — i.e. the splitter is `target`'s left/top edge
+    /// rather than its right/bottom edge (e.g. the Components panel's
+    /// splitter is its left edge; the bottom row's splitter is its top
+    /// edge). For those, dragging right/down needs to *shrink* `target`
+    /// rather than grow it, or the panel visibly moves opposite the mouse.
+    pub invert: bool,
 }
 
 /// Pure resize math: clamp `current + delta` into `[min, max]`. No ECS, no
@@ -45,6 +53,14 @@ fn val_as_px(val: Val) -> Option<f32> {
     }
 }
 
+/// Which splitter (if any) is currently being dragged, shared with
+/// [`splitter_cursor_system`] so the resize cursor (docs/UI_FEATURES.md F4)
+/// stays locked to the drag's axis even if a fast drag momentarily carries
+/// the pointer off the splitter's thin hit area (which would otherwise drop
+/// its `Interaction` back to `None` mid-drag).
+#[derive(Resource, Default)]
+pub struct ActiveSplitterDrag(pub Option<Entity>);
+
 /// Drives every [`Splitter`] from mouse input: press-and-drag a splitter bar
 /// to resize its `target`. At most one splitter drags at a time.
 pub fn splitter_drag_system(
@@ -52,30 +68,31 @@ pub fn splitter_drag_system(
     mouse_motion: Res<AccumulatedMouseMotion>,
     splitters: Query<(Entity, &Interaction, &Splitter)>,
     mut nodes: Query<&mut Node>,
-    mut dragging: Local<Option<Entity>>,
+    mut dragging: ResMut<ActiveSplitterDrag>,
 ) {
     if !mouse_buttons.pressed(MouseButton::Left) {
-        *dragging = None;
-    } else if dragging.is_none() {
-        *dragging = splitters
+        dragging.0 = None;
+    } else if dragging.0.is_none() {
+        dragging.0 = splitters
             .iter()
             .find(|(_, interaction, _)| **interaction == Interaction::Pressed)
             .map(|(entity, ..)| entity);
     }
 
-    let Some(active) = *dragging else { return };
+    let Some(active) = dragging.0 else { return };
     let Ok((_, _, splitter)) = splitters.get(active) else {
-        *dragging = None;
+        dragging.0 = None;
         return;
     };
 
-    let delta = match splitter.axis {
+    let raw_delta = match splitter.axis {
         SplitterAxis::Horizontal => mouse_motion.delta.x,
         SplitterAxis::Vertical => mouse_motion.delta.y,
     };
-    if delta == 0.0 {
+    if raw_delta == 0.0 {
         return;
     }
+    let delta = if splitter.invert { -raw_delta } else { raw_delta };
 
     let Ok(mut node) = nodes.get_mut(splitter.target) else {
         return;
@@ -90,6 +107,52 @@ pub fn splitter_drag_system(
     match splitter.axis {
         SplitterAxis::Horizontal => node.width = Val::Px(new_value),
         SplitterAxis::Vertical => node.height = Val::Px(new_value),
+    }
+}
+
+/// Pure mapping from a splitter's resize axis to the system cursor that
+/// communicates it: `↔` for [`SplitterAxis::Horizontal`], `↕` for
+/// [`SplitterAxis::Vertical`].
+fn cursor_icon_for_axis(axis: SplitterAxis) -> SystemCursorIcon {
+    match axis {
+        SplitterAxis::Horizontal => SystemCursorIcon::EwResize,
+        SplitterAxis::Vertical => SystemCursorIcon::NsResize,
+    }
+}
+
+/// docs/UI_FEATURES.md F4: shows a resize cursor while hovering or dragging a
+/// splitter, so the bar reads as draggable rather than just a thin coloured
+/// strip. An active drag ([`ActiveSplitterDrag`]) takes priority over hover
+/// so the cursor doesn't flicker back to default mid-drag; falls back to
+/// whichever splitter (if any) is currently hovered; clears back to the
+/// platform default once neither applies. No-ops under a headless app with
+/// no primary window (e.g. tests).
+pub fn splitter_cursor_system(
+    dragging: Res<ActiveSplitterDrag>,
+    splitters: Query<(Entity, &Interaction, &Splitter)>,
+    window: Query<Entity, With<PrimaryWindow>>,
+    mut commands: Commands,
+) {
+    let Ok(window) = window.single() else { return };
+
+    let axis = dragging
+        .0
+        .and_then(|active| splitters.get(active).ok())
+        .map(|(_, _, splitter)| splitter.axis)
+        .or_else(|| {
+            splitters
+                .iter()
+                .find(|(_, interaction, _)| matches!(interaction, Interaction::Hovered | Interaction::Pressed))
+                .map(|(_, _, splitter)| splitter.axis)
+        });
+
+    match axis {
+        Some(axis) => {
+            commands.entity(window).insert(CursorIcon::System(cursor_icon_for_axis(axis)));
+        }
+        None => {
+            commands.entity(window).remove::<CursorIcon>();
+        }
     }
 }
 
@@ -116,5 +179,11 @@ mod tests {
     #[test]
     fn zero_delta_is_a_no_op() {
         assert_eq!(resize_value(250.0, 0.0, 100.0, 400.0), 250.0);
+    }
+
+    #[test]
+    fn cursor_icon_matches_axis() {
+        assert_eq!(cursor_icon_for_axis(SplitterAxis::Horizontal), SystemCursorIcon::EwResize);
+        assert_eq!(cursor_icon_for_axis(SplitterAxis::Vertical), SystemCursorIcon::NsResize);
     }
 }

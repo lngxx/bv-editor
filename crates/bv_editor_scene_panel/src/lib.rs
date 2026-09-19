@@ -39,7 +39,7 @@ use bevy_transform::components::Transform;
 use bevy_ui::prelude::*;
 
 use bv_editor_core::{EditorOnly, EditorState, HotkeyAppExt, HotkeyDescriptor, Selection};
-use bv_editor_ui::{DragDropped, DragPayload, DragSource, DropTarget, ScenePanelSlot, ScrollbarThumb};
+use bv_editor_ui::{DragDropped, DragPayload, DragSource, DropTarget, ScenePanelSlot, ScrollbarAxis, ScrollbarThumb};
 
 const ROW_INDENT_PX: f32 = 16.0;
 const ROW_HEIGHT_PX: f32 = 22.0;
@@ -213,7 +213,7 @@ fn spawn_scene_panel_chrome(mut commands: Commands, slots: Query<Entity, With<Sc
         .id();
 
     commands.spawn((
-        ScrollbarThumb { target: rows_container },
+        ScrollbarThumb { target: rows_container, axis: ScrollbarAxis::Vertical },
         Interaction::default(),
         Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), top: Val::Px(0.0), ..Default::default() },
         BackgroundColor(SCROLLBAR_THUMB_BACKGROUND),

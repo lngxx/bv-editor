@@ -1,4 +1,4 @@
-//! A hand-rolled vertical scrollbar (docs/UI_FEATURES.md F2/F3).
+//! A hand-rolled scrollbar, vertical or horizontal (docs/UI_FEATURES.md F2/F3).
 //!
 //! `bevy_ui` already has everything needed for the *clipping/content-window*
 //! half of scrolling built in — `Overflow::scroll_y()` + `ScrollPosition`
@@ -31,15 +31,30 @@ use bevy_ui::{ComputedNode, Display, Interaction, Node, ScrollPosition, Val};
 /// for a very long Scene Tree/Components list.
 const MIN_THUMB_PX: f32 = 20.0;
 
-/// Marks a UI node as the draggable thumb of a vertical scrollbar. `target`
-/// is the scrollable container this thumb scrolls — its `Node` should set
-/// `overflow: Overflow::scroll_y()` (see the module doc). The thumb's own
-/// parent ([`bevy_ecs::hierarchy::ChildOf`]) is read each frame as the
-/// scrollbar's track: whatever entity the thumb is spawned as a child of
-/// defines the track's visual bounds/length, no separate `track` field needed.
+/// Which dimension a [`ScrollbarThumb`] scrolls/is laid out along — the same
+/// idea as [`crate::splitter::SplitterAxis`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ScrollbarAxis {
+    /// Drags left/right, sizes/positions via the track's/target's `width`.
+    Horizontal,
+    /// Drags up/down, sizes/positions via the track's/target's `height`.
+    Vertical,
+}
+
+/// Marks a UI node as the draggable thumb of a scrollbar. `target` is the
+/// scrollable container this thumb scrolls — its `Node` should set the
+/// matching axis of `overflow` to `OverflowAxis::Scroll` (see the module
+/// doc). `axis` picks which of `target`'s two scroll dimensions this thumb
+/// drives; a container that scrolls both ways gets two `ScrollbarThumb`s
+/// (docs/UI_FEATURES.md: Components panel horizontal + vertical). The
+/// thumb's own parent ([`bevy_ecs::hierarchy::ChildOf`]) is read each frame
+/// as the scrollbar's track: whatever entity the thumb is spawned as a
+/// child of defines the track's visual bounds/length, no separate `track`
+/// field needed.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct ScrollbarThumb {
     pub target: Entity,
+    pub axis: ScrollbarAxis,
 }
 
 /// Convert a `ComputedNode`'s (physical-pixel) size into logical pixels —
@@ -52,6 +67,14 @@ fn logical_size(node: &ComputedNode) -> Vec2 {
 
 fn logical_content_size(node: &ComputedNode) -> Vec2 {
     node.content_size() * node.inverse_scale_factor()
+}
+
+/// Picks the component of `v` that `axis` scrolls/sizes along.
+fn axis_component(v: Vec2, axis: ScrollbarAxis) -> f32 {
+    match axis {
+        ScrollbarAxis::Horizontal => v.x,
+        ScrollbarAxis::Vertical => v.y,
+    }
 }
 
 /// Pure thumb-geometry math: given the track's length, how much of the
@@ -106,24 +129,36 @@ pub fn scrollbar_drag_system(
         *dragging = None;
         return;
     };
-    if mouse_motion.delta.y == 0.0 {
+    let motion = match thumb.axis {
+        ScrollbarAxis::Horizontal => mouse_motion.delta.x,
+        ScrollbarAxis::Vertical => mouse_motion.delta.y,
+    };
+    if motion == 0.0 {
         return;
     }
     let Ok(track_node) = tracks.get(child_of.parent()) else { return };
     let Ok((target_node, mut scroll)) = targets.get_mut(thumb.target) else { return };
 
-    let track_length = logical_size(track_node).y;
-    let visible = logical_size(target_node).y;
-    let content = logical_content_size(target_node).y;
+    let track_length = axis_component(logical_size(track_node), thumb.axis);
+    let visible = axis_component(logical_size(target_node), thumb.axis);
+    let content = axis_component(logical_content_size(target_node), thumb.axis);
     if track_length <= 0.0 || content <= visible {
         return;
     }
-    // Moving the cursor by `delta` (screen space) along the track should
+    // Moving the cursor by `motion` (screen space) along the track should
     // move the *content* by the same proportion of the track that the
     // cursor covered — `content / track_length` converts one into the other
     // (the same ratio `bevy_ui_widgets`' own scrollbar drag uses).
-    let scroll_delta = mouse_motion.delta.y * (content / track_length);
-    scroll.0.y = clamp_scroll(scroll.0.y, scroll_delta, visible, content);
+    let scroll_delta = motion * (content / track_length);
+    let current = match thumb.axis {
+        ScrollbarAxis::Horizontal => scroll.0.x,
+        ScrollbarAxis::Vertical => scroll.0.y,
+    };
+    let new_scroll = clamp_scroll(current, scroll_delta, visible, content);
+    match thumb.axis {
+        ScrollbarAxis::Horizontal => scroll.0.x = new_scroll,
+        ScrollbarAxis::Vertical => scroll.0.y = new_scroll,
+    }
 }
 
 /// Scrolls whichever scrollable container the cursor is currently over in
@@ -153,32 +188,58 @@ pub fn wheel_scroll_system(scroll_input: Res<AccumulatedMouseScroll>, mut contai
 }
 
 /// Keeps every [`ScrollbarThumb`]'s size/position in sync with its target's
-/// scroll state every frame: hides the thumb (`Display::None`) entirely
-/// when the content already fits, otherwise sizes/positions it via
-/// [`thumb_geometry`].
+/// scroll state every frame, and hides the *whole scrollbar* — both the
+/// thumb and its track (the thumb's parent) — when the content already
+/// fits, rather than just the thumb: a track with nothing to drag reads as a
+/// scrollbar that's stuck, not one that correctly has nothing to show.
+/// Otherwise sizes/positions the thumb via [`thumb_geometry`].
 pub fn sync_scrollbar_thumb_system(
     thumbs: Query<(Entity, &ScrollbarThumb, &ChildOf)>,
-    tracks: Query<&ComputedNode>,
+    mut tracks: Query<(&ComputedNode, &mut Node), Without<ScrollbarThumb>>,
     targets: Query<(&ComputedNode, &ScrollPosition)>,
-    mut thumb_nodes: Query<&mut Node>,
+    mut thumb_nodes: Query<&mut Node, With<ScrollbarThumb>>,
 ) {
     for (thumb_entity, thumb, child_of) in &thumbs {
-        let Ok(track_node) = tracks.get(child_of.parent()) else { continue };
+        let Ok((track_computed, mut track_node)) = tracks.get_mut(child_of.parent()) else { continue };
         let Ok((target_node, scroll)) = targets.get(thumb.target) else { continue };
-        let Ok(mut node) = thumb_nodes.get_mut(thumb_entity) else { continue };
+        let Ok(mut thumb_node) = thumb_nodes.get_mut(thumb_entity) else { continue };
 
-        let track_length = logical_size(track_node).y;
-        let visible = logical_size(target_node).y;
-        let content = logical_content_size(target_node).y;
+        let track_length = axis_component(logical_size(track_computed), thumb.axis);
+        let visible = axis_component(logical_size(target_node), thumb.axis);
+        let content = axis_component(logical_content_size(target_node), thumb.axis);
+        // Deliberately independent of `track_length`: the track is hidden
+        // (`Display::None`) by this same system whenever content fits, and a
+        // hidden node's own `ComputedNode` collapses to zero size (taffy
+        // doesn't lay out `Display::None` nodes at all) — basing the
+        // overflow decision on the track's own size would make a hidden
+        // track permanently unable to reveal itself again (it reads as
+        // "track_length == 0" forever, which reads as "never overflowing").
+        // `track_length` below is only for sizing the thumb once we already
+        // know (from `target_node`, which is never hidden) that it should show.
+        let overflowing = content > visible;
 
-        if content <= visible || track_length <= 0.0 {
-            node.display = Display::None;
+        track_node.display = if overflowing { Display::Flex } else { Display::None };
+
+        if !overflowing {
+            thumb_node.display = Display::None;
             continue;
         }
-        node.display = Display::Flex;
-        let (thumb_length, offset) = thumb_geometry(track_length, visible, content, scroll.0.y, MIN_THUMB_PX);
-        node.height = Val::Px(thumb_length);
-        node.top = Val::Px(offset);
+        thumb_node.display = Display::Flex;
+        let scroll_pos = match thumb.axis {
+            ScrollbarAxis::Horizontal => scroll.0.x,
+            ScrollbarAxis::Vertical => scroll.0.y,
+        };
+        let (thumb_length, offset) = thumb_geometry(track_length, visible, content, scroll_pos, MIN_THUMB_PX);
+        match thumb.axis {
+            ScrollbarAxis::Horizontal => {
+                thumb_node.width = Val::Px(thumb_length);
+                thumb_node.left = Val::Px(offset);
+            }
+            ScrollbarAxis::Vertical => {
+                thumb_node.height = Val::Px(thumb_length);
+                thumb_node.top = Val::Px(offset);
+            }
+        }
     }
 }
 
@@ -247,11 +308,23 @@ mod tests {
     }
 
     fn setup_scrollbar(app: &mut App, visible: f32, content: f32, track_length: f32) -> (Entity, Entity, Entity) {
-        let target = app.world_mut().spawn((Node::default(), computed_node(visible, content))).id();
-        let track = app.world_mut().spawn((Node::default(), computed_node(track_length, track_length))).id();
+        setup_scrollbar_axis(app, ScrollbarAxis::Vertical, visible, content, track_length)
+    }
+
+    fn computed_node_x(size_x: f32, content_size_x: f32) -> ComputedNode {
+        ComputedNode { size: Vec2::new(size_x, 100.0), content_size: Vec2::new(content_size_x, 100.0), inverse_scale_factor: 1.0, ..Default::default() }
+    }
+
+    fn setup_scrollbar_axis(app: &mut App, axis: ScrollbarAxis, visible: f32, content: f32, track_length: f32) -> (Entity, Entity, Entity) {
+        let (target_computed, track_computed) = match axis {
+            ScrollbarAxis::Horizontal => (computed_node_x(visible, content), computed_node_x(track_length, track_length)),
+            ScrollbarAxis::Vertical => (computed_node(visible, content), computed_node(track_length, track_length)),
+        };
+        let target = app.world_mut().spawn((Node::default(), target_computed)).id();
+        let track = app.world_mut().spawn((Node::default(), track_computed)).id();
         let thumb = app
             .world_mut()
-            .spawn((ScrollbarThumb { target }, Interaction::default(), Node::default(), bevy_ecs::hierarchy::ChildOf(track)))
+            .spawn((ScrollbarThumb { target, axis }, Interaction::default(), Node::default(), bevy_ecs::hierarchy::ChildOf(track)))
             .id();
         (target, track, thumb)
     }
@@ -267,6 +340,50 @@ mod tests {
     }
 
     #[test]
+    fn sync_also_hides_the_track_when_content_fits() {
+        // A visible track with nothing to drag reads as a stuck scrollbar,
+        // not an absent one — the whole scrollbar (track + thumb) must hide.
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(ScrollbarPlugin);
+        let (_target, track, _thumb) = setup_scrollbar(&mut app, 200.0, 100.0, 200.0);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        assert_eq!(app.world().get::<Node>(track).unwrap().display, Display::None);
+    }
+
+    #[test]
+    fn sync_shows_the_track_when_content_overflows() {
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(ScrollbarPlugin);
+        let (_target, track, _thumb) = setup_scrollbar(&mut app, 100.0, 400.0, 200.0);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        assert_eq!(app.world().get::<Node>(track).unwrap().display, Display::Flex);
+    }
+
+    #[test]
+    fn sync_can_reveal_a_track_whose_own_computed_size_is_still_zero() {
+        // Regression test for a self-locking bug: once a track is hidden
+        // (`Display::None`), `bevy_ui`'s layout system stops laying it out
+        // at all, so its own `ComputedNode` collapses to zero size — and
+        // that zero size must NOT be allowed to feed back into "should the
+        // track be visible" (it briefly won't have been re-measured yet the
+        // frame it's un-hidden), or a hidden track could never show itself
+        // again no matter how much the target overflows. Overflow must be
+        // judged from the *target's* content vs visible size only.
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(ScrollbarPlugin);
+        let (_target, track, thumb) = setup_scrollbar(&mut app, 100.0, 400.0, 0.0);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        assert_eq!(app.world().get::<Node>(track).unwrap().display, Display::Flex, "content overflows, so the track must show even though its own computed length is still 0");
+        // The thumb may be zero-sized this one frame (the track hasn't been
+        // re-measured with its new Display::Flex yet), but it must not be
+        // stuck hidden either.
+        assert_eq!(app.world().get::<Node>(thumb).unwrap().display, Display::Flex);
+    }
+
+    #[test]
     fn sync_sizes_the_thumb_when_content_overflows() {
         let mut app = bv_editor_test_utils::headless_app();
         app.add_plugins(ScrollbarPlugin);
@@ -276,6 +393,40 @@ mod tests {
         let node = app.world().get::<Node>(thumb).unwrap();
         assert_eq!(node.display, Display::Flex);
         assert_eq!(node.height, Val::Px(50.0)); // track 200 * visible 100 / content 400
+    }
+
+    #[test]
+    fn sync_sizes_a_horizontal_thumb_by_width_not_height() {
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(ScrollbarPlugin);
+        let (_target, _track, thumb) = setup_scrollbar_axis(&mut app, ScrollbarAxis::Horizontal, 100.0, 400.0, 200.0);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let node = app.world().get::<Node>(thumb).unwrap();
+        assert_eq!(node.display, Display::Flex);
+        assert_eq!(node.width, Val::Px(50.0)); // track 200 * visible 100 / content 400
+        assert_eq!(node.left, Val::Px(0.0));
+    }
+
+    #[test]
+    fn dragging_a_horizontal_thumb_scrolls_the_target_on_x() {
+        use bevy_input::mouse::MouseMotion;
+
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(ScrollbarPlugin);
+        let (target, _track, thumb) = setup_scrollbar_axis(&mut app, ScrollbarAxis::Horizontal, 100.0, 400.0, 200.0);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        app.world_mut().entity_mut(thumb).insert(Interaction::Pressed);
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        app.world_mut().write_message(MouseMotion { delta: Vec2::new(25.0, 0.0) });
+        bv_editor_test_utils::step(&mut app, 1);
+
+        // Track 200px, content 400px -> dragging the thumb 25px moves the
+        // content by 25 * (400/200) = 50px, on x — y must stay untouched.
+        let scroll = app.world().get::<ScrollPosition>(target).unwrap();
+        assert_eq!(scroll.0.x, 50.0);
+        assert_eq!(scroll.0.y, 0.0);
     }
 
     #[test]

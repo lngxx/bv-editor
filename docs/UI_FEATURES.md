@@ -36,9 +36,16 @@
 **สถานะ:** ทำเสร็จแล้ว — widget กลางใน [`bv_editor_ui::scrollbar`](../crates/bv_editor_ui/src/scrollbar.rs) + ต่อเข้ากับ Scene Tree ใน [`bv_editor_scene_panel/src/lib.rs`](../crates/bv_editor_scene_panel/src/lib.rs):
 - ใช้ `Overflow::scroll_y()` + `ScrollPosition` ของ `bevy_ui` ตรงๆ สำหรับ clip/content-window (built-in, ไม่เขียนเอง) — `SceneTreeRowsContainer` ได้ `flex_grow: 1.0` + `min_height: Val::Px(0.0)` ใหม่ เพื่อให้มันถูก "บีบ" ให้เต็มพื้นที่ที่เหลือของ panel แทนที่จะโตตามเนื้อหา (ไม่งั้น overflow ไม่มีอะไรให้ clip)
 - `ScrollbarThumb`/`scrollbar_drag_system`/`wheel_scroll_system`/`sync_scrollbar_thumb_system` เขียนเองบน `Interaction`+`ButtonInput`+`AccumulatedMouseMotion`/`AccumulatedMouseScroll` (**ไม่ใช้** `bevy_ui_widgets::scrollbar` ที่มีมาให้ในเวอร์ชันนี้จริง เพราะมันสร้างบน `bevy_picking`'s pointer events คนละ paradigm กับ splitter/dnd ที่มีอยู่แล้ว และใช้ไม่ได้ใน headless test ของโปรเจกต์นี้โดยไม่มี picking backend — ดูเหตุผลเต็มในโค้ดคอมเมนต์ของ `scrollbar.rs`)
-- thumb ซ่อนอัตโนมัติ (`Display::None`) เมื่อเนื้อหาพอดีกับพื้นที่ ไม่โชว์ thumb เกะกะแบบที่สเปกขอ
+- **ซ่อนทั้ง track และ thumb** (`Display::None`) เมื่อเนื้อหาพอดีกับพื้นที่ ไม่ใช่ซ่อนแค่ thumb — ของเดิม (ก่อน 2026-09-19) ซ่อนแค่ thumb เฉยๆ ทำให้แถบพื้นหลัง (track) ค้างโชว์ตลอดแม้ไม่มีอะไรให้ scroll ดูเหมือน scrollbar ค้าง
 - scroll position "คงอยู่" ข้าม tree rebuild ได้ฟรีอยู่แล้ว เพราะ `ScrollPosition` อยู่บน container entity ที่ไม่เคยถูก despawn (`rebuild_scene_tree_ui` despawn เฉพาะแถว ไม่แตะ container)
 - เทสครอบคลุมทั้ง pure math (`thumb_geometry`/`clamp_scroll`) และ ECS-level (wheel scroll เฉพาะ container ที่ hover, ลาก thumb แล้ว target scroll ตาม, thumb ซ่อน/โผล่ตามเนื้อหา) รวม 12 เทสใหม่ใน `bv_editor_ui` + 1 เทส integration ใน `bv_editor_scene_panel` ที่ยืนยันว่า thumb ที่ spawn จริงชี้ไปที่ `SceneTreeRowsContainer` ที่ถูกต้อง
+
+**Bug fix (2026-09-19): track ค้างโชว์ตลอด + ต่อมาซ่อนค้างตลอด (deadlock)** — สองรอบติดกัน:
+1. เดิม `sync_scrollbar_thumb_system` ซ่อนแค่ thumb ไม่แตะ track เลย → track (แถบพื้นหลังมืดๆ) โชว์ตลอดแม้เนื้อหาพอดีพื้นที่ ดูเหมือน scrollbar ค้าง
+2. แก้รอบแรกโดยให้ซ่อน track ด้วยเมื่อไม่ overflow แล้วเจอบั๊กใหม่ที่ร้ายแรงกว่า: เงื่อนไข "overflow หรือไม่" ตอนนั้นใช้ `track_length > 0.0` ร่วมด้วย (เดิมมีอยู่แล้วเพื่อกันหารด้วยศูนย์) — แต่ `track_length` มาจาก `ComputedNode` ของ track เอง ซึ่งพอ track ถูกซ่อน (`Display::None`) `bevy_ui`'s layout engine (taffy) จะไม่จัด layout ให้ node นั้นเลย ทำให้ `ComputedNode.size` ของมันเหลือ 0 ค้างตลอดไป — ผลคือเกิด **deadlock ในตัวเอง**: track ถูกซ่อนแล้ว size กลายเป็น 0 แล้ว 0 นั้นเองก็ทำให้เงื่อนไข "overflow" เป็น false ตลอดกาล (เพราะต้องการ `track_length > 0`) ต่อให้เนื้อหา overflow มากแค่ไหนก็ไม่มีทางโชว์ track กลับมาได้อีกเลย
+   - แก้โดยตัด `track_length` ออกจากเงื่อนไข overflow ทั้งหมด — ตัดสิน "overflow หรือไม่" จาก `content > visible` ของ **target** (container ที่ scroll ได้ ไม่ใช่ตัว track เอง) เพียงอย่างเดียว เพราะ target ไม่เคยถูกซ่อนโดยระบบนี้ ค่า `ComputedNode` ของมันเชื่อถือได้เสมอ ส่วน `track_length` ยังใช้ต่อได้ปกติแต่ใช้แค่ตอนคำนวณขนาด thumb (`thumb_geometry`) เท่านั้น ไม่ใช่ตัดสินใจ show/hide
+   - เทส `sync_can_reveal_a_track_whose_own_computed_size_is_still_zero` (`bv_editor_ui/src/scrollbar.rs`) จำลองสถานการณ์นี้ตรงๆ: track ComputedNode.size = 0 แต่ content ของ target overflow visible จริง แล้วยืนยันว่า track/thumb ยัง Flex ได้ ไม่ค้าง None ตลอดไป
+   - **บทเรียน:** อย่าตัดสิน "จะโชว์ widget นี้ไหม" จากขนาดที่ตัว widget เดียวกันวัดตัวเองได้ ถ้า widget นั้นถูกซ่อนด้วยเงื่อนไขเดียวกัน — จะเกิด self-referential deadlock ทันที ต้องตัดสินจากแหล่งข้อมูลที่ไม่ถูกซ่อน (ในที่นี้คือ target/container) เสมอ
 
 ---
 
@@ -49,6 +56,13 @@
 - **ต่างจาก F2 ตรงตามสเปก:** `rebuild_inspector_ui` reset `ScrollPosition.y` กลับ 0 ทุกครั้งที่ rebuild จริง (ไม่ใช่แค่ตอน dirty flag ถูก set เฉยๆ) — ใช้ได้เพราะ `InspectorDirty` ถูก set จาก `Selection` เปลี่ยนแปลงเท่านั้น (`detect_selection_change`) ไม่มีสาเหตุอื่น ต่างจาก Scene Tree ที่ dirty มาจากทั้ง selection และ hierarchy เปลี่ยนแปลงปนกัน จึงต้อง "คงอยู่" แทน
 - เทสครอบคลุมทั้ง wiring (`scrollbar_thumb_targets_the_inspector_body_and_wheel_scrolls_it`) และพฤติกรรม reset (`switching_selection_resets_the_scroll_position`: scroll ไปที่ 123px ด้วยมือ แล้วสลับ selection แล้วต้องกลับเป็น 0)
 
+**เพิ่ม horizontal scrollbar (2026-09-19):** field บางตัว (เช่น `Vec3`/`Color` ที่ขยายเป็นหลายกล่อง `f32` ต่อแถว) กว้างเกิน panel แคบๆ ได้ ก่อนหน้านี้ `InspectorBody` scroll ได้แค่แนวตั้ง (`Overflow::scroll_y()`) เนื้อหาที่กว้างเกินเลยทะลุขอบ panel ออกไปแบบไม่มีทางเลื่อนไปดูได้เลย —
+- `bv_editor_ui::scrollbar` generalize ให้ `ScrollbarThumb` มี field `axis: ScrollbarAxis` (`Horizontal`/`Vertical`) แทนที่จะ hardcode แนวตั้งอย่างเดียว — `scrollbar_drag_system`/`sync_scrollbar_thumb_system` ใช้ `axis` เลือกว่าจะอ่าน/เขียน `.x` หรือ `.y` ของ `ScrollPosition`/ขนาด thumb (`width`+`left` สำหรับแนวนอน, `height`+`top` สำหรับแนวตั้ง) — widget เดิมใช้ซ้ำได้ทั้งสองแกนโดยไม่ต้องเขียน type ใหม่ (`wheel_scroll_system` ยังเป็นแนวตั้งอย่างเดียวตามเดิม ไม่ผูก wheel กับแนวนอน เพราะไม่มีคนขอ)
+- `InspectorBody` เปลี่ยนเป็น `Overflow::scroll()` (ทั้ง x และ y) + เพิ่ม `min_width: Val::Px(0.0)` คู่กับ `min_height: Val::Px(0.0)` เดิม (เหตุผลเดียวกับ F2/F3: ไม่งั้น flexbox ไม่ยอมบีบ body ให้แคบกว่าความกว้างธรรมชาติของเนื้อหา)
+- layout เปลี่ยนเป็นทรง "L" (แบบ scroll pane ทั่วไป): `content_row` (body | vertical track) อยู่แถวบน, horizontal track เต็มความกว้างอยู่แถวล่าง — ทั้งคู่เป็น `ScrollbarThumb` ที่ `target: body` เดียวกัน คนละ `axis`
+- เทสใหม่ 3 เคสใน `bv_editor_ui/src/scrollbar.rs`: `sync_sizes_a_horizontal_thumb_by_width_not_height`, `dragging_a_horizontal_thumb_scrolls_the_target_on_x`, และเทส regression ของ deadlock bug ด้านบน (`sync_can_reveal_a_track_whose_own_computed_size_is_still_zero`)
+- **ข้อควรระวังตอน debug ฟีเจอร์นี้:** headless test fake `ComputedNode` ตรงๆ เลยไม่มีทางเจอ deadlock bug ด้านบนได้เอง (fake ค่าไม่ผ่าน `Display::None` จริง) ต้องรันแอปจริง (`ui_gallery`) แล้วอ่าน log ค่า track/visible/content สดๆ ถึงจับได้ — ถ้าจะแก้ scrollbar ต่อในอนาคต แนะนำ reproduce ผ่านแอปจริงเสมอ ไม่ใช่เชื่อแค่ headless test ผ่าน
+
 **Phase:** อยู่ในขอบเขต Phase 3 เดิม (Inspector ผ่าน bevy_reflect) ตามที่วางแผนไว้
 
 ---
@@ -57,12 +71,20 @@
 
 **สถานะปัจจุบัน: มีอยู่แล้วและใช้งานได้จริง** — [`splitter.rs`](../crates/bv_editor_ui/src/splitter.rs) + [`shell.rs`](../crates/bv_editor_ui/src/shell.rs) ทำ splitter ที่ลากปรับ width ของ Scene Tree (ซ้าย) และ Components (ขวา) ได้แล้ว รวมถึง splitter แนวนอนปรับความสูงแถวล่าง (Project Files/Console) มี min/max px กันลากจนพังด้วย (`SIDE_PANEL_MIN_PX`/`MAX_PX` เป็นต้น) และมี unit test ของ resize math (`resize_value`) อยู่แล้ว
 
-**ช่องว่างที่ยังไม่ครบ (ของเดิมทำแค่ "resize" ไม่ใช่ "reposition"):**
-- **Cursor feedback** — ตอน hover เหนือ splitter ควรเปลี่ยน mouse cursor เป็นลูกศร resize (`↔`/`↕` ตามแกน) เพื่อบอกว่าลากได้ ตอนนี้ splitter เป็นแค่แถบสีที่ interactive เฉยๆ ไม่มี cursor hint
+**Bug fix (2026-09-19): ทิศทางลาก invert กับเมาส์บน panel ขวา/ล่าง** — `resize_value` ทำ `current + delta` เสมอ ซึ่งถูกต้องเฉพาะ splitter ที่เป็น**ขอบขวา**ของ target (Scene Tree ซ้ายมือ) แต่ splitter ของ Components panel เป็น**ขอบซ้าย**ของ target และ splitter ของแถวล่างเป็น**ขอบบน**ของ target — ทั้งสองกรณีนี้ลากขวา/ลง (`delta` บวก) ต้องทำให้ target **เล็กลง** ไม่ใช่ใหญ่ขึ้น โค้ดเดิมไม่ได้แยกกรณีนี้เลยจึงลาก Components panel/แถวล่างแล้วขนาดวิ่งสวนทางเมาส์
+- แก้โดยเพิ่ม field `Splitter::invert: bool` — `true` สำหรับ splitter ที่เป็นขอบซ้าย/บนของ target (Components panel, แถวล่าง), `false` สำหรับขอบขวา/ล่าง (Scene Tree) — `splitter_drag_system` กลับเครื่องหมาย `delta` ก่อนส่งเข้า `resize_value` เมื่อ `invert == true`
+- เทส `inverted_splitter_drag_resizes_its_target_opposite_the_mouse` (`bv_editor_ui/src/lib.rs`) ยืนยันว่าลาก Components panel splitter ไปทางขวา 40px แล้ว panel เล็กลง 40px (ไม่ใช่ใหญ่ขึ้น) แยกจาก `splitter_drag_resizes_its_target` เดิมที่เทส Scene Tree (ไม่ invert)
+
+**Cursor feedback ✅ implemented (2026-09-19):** hover หรือลาก splitter เปลี่ยน mouse cursor เป็น `SystemCursorIcon::EwResize` (`↔`, `SplitterAxis::Horizontal`) หรือ `NsResize` (`↕`, `SplitterAxis::Vertical`) จริง โดย insert/remove component `bevy_window::CursorIcon` บน primary window entity —
+- `splitter_cursor_system` (ใน `splitter.rs`) รันต่อจาก `splitter_drag_system` ทุกเฟรม (`.chain()`) อ่าน resource `ActiveSplitterDrag` (เพิ่มใหม่ แทนที่ `Local<Option<Entity>>` เดิมของ `splitter_drag_system` เพื่อให้สอง system แชร์สถานะ "กำลังลากตัวไหนอยู่" กันได้) — ถ้ากำลังลากอยู่ ยึด cursor ตามแกนของตัวที่ลากอยู่ก่อนเสมอ (กันไม่ให้ cursor กระพริบกลับ default ตอนลากเร็วจนเมาส์หลุดพื้นที่บางๆ ของ splitter) ถ้าไม่ได้ลาก fallback ไปดู splitter ที่ hover อยู่แทน ถ้าไม่มีทั้งคู่ก็ `remove::<CursorIcon>()` คืนเป็น default ของแพลตฟอร์ม
+- no-op ปลอดภัยเมื่อไม่มี primary window (เช่นใน headless test) เหมือน pattern เดิมของ `spawn_shell_on_startup`
+- เทสครอบคลุมทั้ง pure mapping (`cursor_icon_matches_axis`: axis → cursor icon ที่ถูกต้อง) และ ECS-level (`hovering_a_splitter_sets_the_resize_cursor_and_clears_it_after`: hover แล้วเช็ค `CursorIcon` component บน window entity ถูก insert/remove ถูกต้อง)
+
+**ช่องว่างที่ยังไม่ครบ:**
 - **จำขนาดข้ามเซสชัน** — ปัจจุบัน panel กลับไปใช้ `side_panel_width_px(breakpoint)` เริ่มต้นทุกครั้งที่เปิดโปรแกรมใหม่ ยังไม่ persist ขนาดที่ผู้ใช้ปรับไว้ (เกี่ยวโยงกับ `editor_layout.ron` ที่ระบุไว้แล้วใน DESIGN.md Phase 10 — แนะนำรวมเป็นงานเดียวกับ F5 เพราะทั้งคู่ต้อง save/load layout state เหมือนกัน)
 - **min/max ไม่ทนต่อการ resize หน้าต่างหลัง startup** — รายละเอียดเต็มอยู่ที่ F7 ด้านล่าง เพราะกระทบมากกว่าแค่ splitter ตัวเดียว (รวม viewport ที่ยังไม่มี min เลย) แยกเป็นฟีเจอร์ของตัวเอง
 
-**Phase:** ตัว resize หลักถือว่า **เสร็จแล้วจาก Phase 1** ส่วน cursor feedback เป็น polish เล็กๆ แทรกได้ทุกเมื่อ ส่วน persist ข้ามเซสชันผูกกับ F5/Phase 10, ส่วน min/max ที่ทนต่อการ resize หน้าต่างอยู่ใน F7
+**Phase:** ตัว resize หลักและ cursor feedback ถือว่า **เสร็จแล้วจาก Phase 1** ส่วน persist ข้ามเซสชันผูกกับ F5/Phase 10, ส่วน min/max ที่ทนต่อการ resize หน้าต่างอยู่ใน F7
 
 ---
 
@@ -133,7 +155,7 @@
 2. ~~**F2** (Scene Tree scrollbar)~~ ✅ เสร็จแล้ว — widget กลาง `bv_editor_ui::scrollbar` พร้อมให้ F3 ใช้ซ้ำ
 3. ~~**F7** (min/max ที่ยึดอยู่จริง)~~ ✅ เสร็จแล้ว — ทำได้เร็วกว่าคาดเพราะใช้ `Node.min_*`/`max_*` ของ `bevy_ui` ตรงๆ
 4. ~~**F3** (Components panel scrollbar)~~ ✅ เสร็จแล้ว — ต่อ widget จาก F2 เข้ากับ Inspector panel ตามแผน
-5. **F4 ส่วน cursor feedback** — เล็ก อิสระ แทรกเมื่อไหร่ก็ได้
+5. ~~**F4 ส่วน cursor feedback**~~ ✅ เสร็จแล้ว — เหลือแค่ persist ขนาดข้ามเซสชัน ผูกกับ F5 ด้านล่าง
 6. **F6 ขั้นต่ำ** (`IconRegistry` + วาด icon เดี่ยวได้) — โครงสร้างพื้นฐานที่ F5 ต้องใช้
 7. **F5** (docking) — ก้อนใหญ่สุด เสี่ยงบานปลายสุด ทำหลังสุด ตรงกับ Phase 10 เดิมของ DESIGN.md รวม F4 ส่วน persist layout เข้าไปพร้อมกัน
 
