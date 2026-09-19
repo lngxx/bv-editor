@@ -16,6 +16,7 @@
 
 mod breakpoint;
 mod dnd;
+mod dock;
 mod icon;
 mod scroll_area;
 mod scrollbar;
@@ -24,12 +25,15 @@ mod splitter;
 
 pub use breakpoint::{bottom_panel_height_px, breakpoint_for_width, side_panel_width_px, LayoutBreakpoint};
 pub use dnd::{drag_and_drop_system, DragAndDropPlugin, DragDropped, DragPayload, DragSource, DragState, DropTarget};
+pub use dock::{
+    dock_drag_drop_system, dock_tab_click_system, DockDropTarget, DockEdge, DockLayout, DockLayoutDirty, DockNode, DockRegion, DockSlots, DockTabButton, DockZone, PanelId, DEFAULT_SPLIT_SIZE_PX,
+};
 pub use icon::{spawn_icon, IconId, IconPlugin, IconRegistry, PLACEHOLDER_ICON};
 pub use scroll_area::{spawn_scroll_area, ScrollAreaStyle, ScrollAxes};
 pub use scrollbar::{clamp_scroll, scrollbar_cursor_system, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarAxis, ScrollbarPlugin, ScrollbarThumb};
 pub use shell::{
-    spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, EditorShellEntities, EditorShellRoot,
-    InspectorPanelSlot, ScenePanelSlot, StatusBarSlot, ToolbarSlot, ViewportSlot,
+    dock_drop_target_highlight_system, spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, DockRegionRoot, EditorShellEntities, EditorShellRoot, InspectorPanelSlot, ScenePanelSlot, StatusBarSlot,
+    ToolbarSlot, ViewportSlot,
 };
 pub use splitter::{resize_value, splitter_cursor_system, splitter_drag_system, Splitter, SplitterAxis};
 
@@ -85,6 +89,7 @@ impl Plugin for EditorUiPlugin {
         app.init_resource::<splitter::ActiveSplitterDrag>();
         app.add_systems(Startup, spawn_shell_on_startup.in_set(EditorShellSet));
         app.add_systems(Update, (splitter_drag_system, splitter_cursor_system).chain());
+        shell::add_dock_systems(app);
     }
 }
 
@@ -118,6 +123,19 @@ mod tests {
         app
     }
 
+    /// Finds `region`'s resizable dock region box (docs/UI_FEATURES.md F5)
+    /// by its [`DockRegionRoot`] marker — the entity that used to be
+    /// findable via `With<ScenePanelSlot>`/`With<InspectorPanelSlot>`
+    /// before docking split "the resizable box" from "the content slot"
+    /// into two separate entities. Tests that go through the real
+    /// `EditorUiPlugin::Startup` system (rather than calling
+    /// `spawn_editor_shell` directly and keeping its returned
+    /// `EditorShellEntities`) need this to get back to the box at all.
+    fn find_region_box(world: &mut bevy_ecs::world::World, region: dock::DockRegion) -> Entity {
+        let mut query = world.query::<(Entity, &DockRegionRoot)>();
+        query.iter(world).find(|(_, r)| r.0 == region).map(|(e, _)| e).expect("the region's box should exist")
+    }
+
     #[test]
     fn plugin_builds_without_panicking_headless() {
         let mut app = setup();
@@ -134,8 +152,8 @@ mod tests {
         bv_editor_test_utils::step(&mut app, 1);
 
         let world = app.world_mut();
-        let mut query = world.query_filtered::<&Node, With<ScenePanelSlot>>();
-        let node = query.single(world).expect("scene panel slot should exist");
+        let left_region = find_region_box(world, dock::DockRegion::Left);
+        let node = world.get::<Node>(left_region).unwrap();
         assert_eq!(node.width, bevy_ui::Val::Px(side_panel_width_px(LayoutBreakpoint::Normal)));
     }
 
@@ -184,15 +202,24 @@ mod tests {
         assert!(matches!(viewport.min_width, Val::Px(px) if px > 0.0), "viewport must have its own width floor (F7 gap #2)");
         assert!(matches!(viewport.min_height, Val::Px(px) if px > 0.0), "viewport must have its own height floor (F7 gap #2)");
 
-        let assets = world.get::<Node>(entities.assets_panel).unwrap();
-        let console = world.get::<Node>(entities.console_panel).unwrap();
-        for panel in [assets, console] {
-            assert!(matches!(panel.min_width, Val::Px(px) if px > 0.0), "bottom-row panels must have a width floor (F7 gap #3)");
-        }
+        // Project Files/Console no longer have stable entity ids of their
+        // own — docking (F5) means either could move elsewhere — so unlike
+        // `scene`/`inspector` above, find their default split via its
+        // `Splitter` rather than an `EditorShellEntities` field: the one
+        // whose target isn't the already-known left/right region box.
+        let world = app.world_mut();
+        let mut splitters = world.query::<&Splitter>();
+        let bottom_split_target = splitters
+            .iter(world)
+            .find(|s| s.axis == SplitterAxis::Horizontal && s.target != entities.scene_panel && s.target != entities.inspector_panel)
+            .map(|s| s.target)
+            .expect("the bottom region's default Assets/Console splitter should exist");
+        let bottom_split_bounds = world.get::<Node>(bottom_split_target).expect("the bottom region's split target should be a real Node");
+        assert!(matches!(bottom_split_bounds.min_width, Val::Px(px) if px > 0.0), "bottom-row panels must have a width floor (F7 gap #3)");
+        assert!(matches!(bottom_split_bounds.max_width, Val::Px(px) if px > 0.0));
 
         // The bottom row itself (not exposed as a named `EditorShellEntities`
         // field) is whatever the vertical `Splitter`'s target is.
-        let world = app.world_mut();
         let mut splitters = world.query::<&Splitter>();
         let bottom_row = splitters.iter(world).find(|s| s.axis == SplitterAxis::Vertical).map(|s| s.target).expect("the bottom row's vertical splitter should exist");
         let bottom_row_bounds = world.get::<Node>(bottom_row).expect("the bottom row's target should be a real Node");
@@ -212,8 +239,7 @@ mod tests {
         bv_editor_test_utils::step(&mut app, 1);
 
         let world = app.world_mut();
-        let mut scene_panels = world.query_filtered::<Entity, With<ScenePanelSlot>>();
-        let target = scene_panels.single(world).expect("scene panel slot should exist");
+        let target = find_region_box(world, dock::DockRegion::Left);
 
         let mut splitters = world.query::<(Entity, &Splitter)>();
         let splitter_entity = splitters
@@ -256,8 +282,7 @@ mod tests {
         bv_editor_test_utils::step(&mut app, 1);
 
         let world = app.world_mut();
-        let mut inspector_panels = world.query_filtered::<Entity, With<InspectorPanelSlot>>();
-        let target = inspector_panels.single(world).expect("inspector panel slot should exist");
+        let target = find_region_box(world, dock::DockRegion::Right);
 
         let mut splitters = world.query::<(Entity, &Splitter)>();
         let splitter_entity = splitters
@@ -297,8 +322,7 @@ mod tests {
         let window = app.world_mut().spawn((Window::default(), PrimaryWindow)).id();
 
         let world = app.world_mut();
-        let mut scene_panels = world.query_filtered::<Entity, With<ScenePanelSlot>>();
-        let target = scene_panels.single(world).expect("scene panel slot should exist");
+        let target = find_region_box(world, dock::DockRegion::Left);
         let mut splitters = world.query::<(Entity, &Splitter)>();
         let splitter_entity = splitters
             .iter(world)

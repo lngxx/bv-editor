@@ -119,10 +119,12 @@ mod tests {
         let world = app.world_mut();
         let mut slots = world.query_filtered::<&Children, With<bv_editor_ui::ScenePanelSlot>>();
         let children = slots.single(world).expect("ScenePanelSlot should exist");
-        // Phase 1 alone gives it just the title text; Phase 2's chrome adds
-        // the Add/Delete toolbar row and the (possibly still-empty) rows
-        // container on top of that.
-        assert!(children.len() >= 3, "expected the Scene Tree's own chrome on top of the Phase 1 title, got {} children", children.len());
+        // docs/UI_FEATURES.md F5: the slot itself no longer carries a title
+        // text child (that moved to its dock tab strip button — see
+        // `bv_editor_ui::shell`), so this now counts only
+        // `ScenePanelPlugin`'s own chrome: the Add/Delete toolbar row and
+        // the (possibly still-empty) rows container.
+        assert!(children.len() >= 2, "expected the Scene Tree's own chrome under its slot, got {} children", children.len());
     }
 
     /// Same regression guard as `scene_panel_chrome_is_actually_spawned_through_the_real_editor_plugin`,
@@ -139,9 +141,11 @@ mod tests {
         let world = app.world_mut();
         let mut slots = world.query_filtered::<&Children, With<bv_editor_ui::InspectorPanelSlot>>();
         let children = slots.single(world).expect("InspectorPanelSlot should exist");
-        // Phase 1 alone gives it just the title text; Phase 3's chrome adds
-        // the (possibly still-empty) body container on top of that.
-        assert!(children.len() >= 2, "expected the Inspector's own chrome on top of the Phase 1 title, got {} children", children.len());
+        // docs/UI_FEATURES.md F5: the slot itself no longer carries a title
+        // text child (see the matching Scene Tree comment above), so this
+        // now counts only `InspectorPanelPlugin`'s own (possibly
+        // still-empty) body container.
+        assert!(!children.is_empty(), "expected the Inspector's own chrome under its slot, got {} children", children.len());
     }
 
     /// End-to-end: composed through the real `EditorPlugin` (not a bare

@@ -261,8 +261,15 @@ pub fn sync_scrollbar_thumb_system(
 /// flicker back to default mid-drag; clears back to the platform default
 /// once neither applies. No-ops under a headless app with no primary window
 /// (e.g. tests).
-pub fn scrollbar_cursor_system(dragging: Res<ActiveScrollbarDrag>, thumbs: Query<&Interaction, With<ScrollbarThumb>>, window: Query<Entity, With<PrimaryWindow>>, mut commands: Commands) {
-    let Ok(window) = window.single() else { return };
+///
+/// Only clears `CursorIcon` when the *current* icon is one this system
+/// would itself have set (`Grab`/`Grabbing`) — see
+/// [`crate::splitter::splitter_cursor_system`]'s matching doc comment for
+/// why an unconditional clear here is wrong: both systems run in the same
+/// `Update` schedule with no ordering between them, so whichever runs last
+/// on a given frame must not stomp the other's legitimately-set icon.
+pub fn scrollbar_cursor_system(dragging: Res<ActiveScrollbarDrag>, thumbs: Query<&Interaction, With<ScrollbarThumb>>, window: Query<(Entity, Option<&CursorIcon>), With<PrimaryWindow>>, mut commands: Commands) {
+    let Ok((window, current_icon)) = window.single() else { return };
 
     let hovered = thumbs.iter().any(|interaction| matches!(interaction, Interaction::Hovered | Interaction::Pressed));
 
@@ -270,7 +277,7 @@ pub fn scrollbar_cursor_system(dragging: Res<ActiveScrollbarDrag>, thumbs: Query
         commands.entity(window).insert(CursorIcon::System(SystemCursorIcon::Grabbing));
     } else if hovered {
         commands.entity(window).insert(CursorIcon::System(SystemCursorIcon::Grab));
-    } else {
+    } else if matches!(current_icon, Some(CursorIcon::System(SystemCursorIcon::Grab)) | Some(CursorIcon::System(SystemCursorIcon::Grabbing))) {
         commands.entity(window).remove::<CursorIcon>();
     }
 }

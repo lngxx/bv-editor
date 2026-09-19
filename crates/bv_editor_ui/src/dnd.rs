@@ -23,6 +23,9 @@ use bevy_ui::Interaction;
 pub enum DragPayload {
     /// Dragging a Scene Tree row: the entity it represents (Phase 2).
     Entity(Entity),
+    /// Dragging a dock tab strip button: which built-in panel it represents
+    /// (docs/UI_FEATURES.md F5). See [`crate::dock`].
+    Panel(crate::dock::PanelId),
 }
 
 /// Marks a UI node that can be picked up and dragged, carrying `payload`.

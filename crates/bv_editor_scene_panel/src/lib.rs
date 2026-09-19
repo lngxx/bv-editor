@@ -277,7 +277,7 @@ fn handle_drag_reparent(
     mut dirty: ResMut<SceneTreeDirty>,
 ) {
     for drop in drops.read() {
-        let DragPayload::Entity(dragged) = drop.payload;
+        let DragPayload::Entity(dragged) = drop.payload else { continue };
         let Ok(target_row) = rows.get(drop.target) else { continue };
         let target = target_row.represents;
 

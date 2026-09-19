@@ -127,13 +127,25 @@ fn cursor_icon_for_axis(axis: SplitterAxis) -> SystemCursorIcon {
 /// whichever splitter (if any) is currently hovered; clears back to the
 /// platform default once neither applies. No-ops under a headless app with
 /// no primary window (e.g. tests).
+///
+/// Only clears `CursorIcon` when the *current* icon is one this system
+/// would itself have set (`EwResize`/`NsResize`) — not unconditionally.
+/// `bv_editor_ui::EditorUiPlugin` also runs
+/// [`crate::scrollbar::scrollbar_cursor_system`] in the same `Update`
+/// schedule, with no ordering constraint between the two (nothing requires
+/// one), so on any given frame either could run last. An unconditional
+/// `remove::<CursorIcon>()` here would then be a coin flip away from
+/// wiping out a legitimately-hovered scrollbar thumb's `Grab` cursor
+/// whenever no splitter happens to be hovered that same frame — this
+/// system should only ever clean up after itself, never after a sibling
+/// system it has no relationship with.
 pub fn splitter_cursor_system(
     dragging: Res<ActiveSplitterDrag>,
     splitters: Query<(Entity, &Interaction, &Splitter)>,
-    window: Query<Entity, With<PrimaryWindow>>,
+    window: Query<(Entity, Option<&CursorIcon>), With<PrimaryWindow>>,
     mut commands: Commands,
 ) {
-    let Ok(window) = window.single() else { return };
+    let Ok((window, current_icon)) = window.single() else { return };
 
     let axis = dragging
         .0
@@ -150,9 +162,10 @@ pub fn splitter_cursor_system(
         Some(axis) => {
             commands.entity(window).insert(CursorIcon::System(cursor_icon_for_axis(axis)));
         }
-        None => {
+        None if matches!(current_icon, Some(CursorIcon::System(SystemCursorIcon::EwResize)) | Some(CursorIcon::System(SystemCursorIcon::NsResize))) => {
             commands.entity(window).remove::<CursorIcon>();
         }
+        None => {}
     }
 }
 
