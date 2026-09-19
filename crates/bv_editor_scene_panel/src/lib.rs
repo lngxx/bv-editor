@@ -39,7 +39,7 @@ use bevy_transform::components::Transform;
 use bevy_ui::prelude::*;
 
 use bv_editor_core::{EditorOnly, EditorState, HotkeyAppExt, HotkeyDescriptor, Selection};
-use bv_editor_ui::{DragDropped, DragPayload, DragSource, DropTarget, ScenePanelSlot, ScrollbarAxis, ScrollbarThumb};
+use bv_editor_ui::{spawn_scroll_area, DragDropped, DragPayload, DragSource, DropTarget, ScenePanelSlot, ScrollAreaStyle, ScrollAxes};
 
 const ROW_INDENT_PX: f32 = 16.0;
 const ROW_HEIGHT_PX: f32 = 22.0;
@@ -159,17 +159,9 @@ fn button(label: &'static str) -> impl Bundle {
     )
 }
 
-/// Builds the Scene Tree's chrome: the Add/Delete toolbar, then a row
-/// holding [`SceneTreeRowsContainer`] (clipped + scrollable,
-/// docs/UI_FEATURES.md F2) next to its scrollbar track/thumb.
-///
-/// `SceneTreeRowsContainer` gets `flex_grow: 1.0` + `min_height: Val::Px(0.0)`
-/// so it actually fills (and is bounded by) the remaining vertical space in
-/// the panel instead of growing to fit its content — without a bound,
-/// `Overflow::scroll_y()` has nothing to clip against and rows just spill
-/// out past the panel like before F2. `min_height: 0.0` overrides flexbox's
-/// default `min-height: auto` (content-based), which would otherwise refuse
-/// to shrink the container below its rows' total height in the first place.
+/// Builds the Scene Tree's chrome: the Add/Delete toolbar, then a
+/// [`spawn_scroll_area`] holding [`SceneTreeRowsContainer`]
+/// (docs/UI_FEATURES.md F2).
 fn spawn_scene_panel_chrome(mut commands: Commands, slots: Query<Entity, With<ScenePanelSlot>>) {
     let Ok(slot) = slots.single() else { return };
 
@@ -182,48 +174,14 @@ fn spawn_scene_panel_chrome(mut commands: Commands, slots: Query<Entity, With<Sc
             });
     });
 
-    let scroll_row = commands
-        .spawn((
-            Node { flex_direction: FlexDirection::Row, flex_grow: 1.0, min_height: Val::Px(0.0), margin: UiRect::top(Val::Px(4.0)), ..Default::default() },
-            ChildOf(slot),
-        ))
-        .id();
-
-    let rows_container = commands
-        .spawn((
-            SceneTreeRowsContainer,
-            Interaction::default(),
-            Node {
-                flex_direction: FlexDirection::Column,
-                flex_grow: 1.0,
-                min_height: Val::Px(0.0),
-                overflow: Overflow::scroll_y(),
-                ..Default::default()
-            },
-            ChildOf(scroll_row),
-        ))
-        .id();
-
-    let track = commands
-        .spawn((
-            // `flex_shrink: 0.0` — see the identical reasoning on
-            // `bv_editor_inspector_panel::spawn_inspector_chrome`'s `v_track`
-            // (a `Node`'s default `flex_shrink` of `1.0` would otherwise let
-            // `scroll_row` crush this fixed-width track to make room for
-            // unusually wide row content).
-            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), flex_shrink: 0.0, margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
-            BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
-            ChildOf(scroll_row),
-        ))
-        .id();
-
-    commands.spawn((
-        ScrollbarThumb { target: rows_container, axis: ScrollbarAxis::Vertical },
-        Interaction::default(),
-        Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), top: Val::Px(0.0), ..Default::default() },
-        BackgroundColor(SCROLLBAR_THUMB_BACKGROUND),
-        ChildOf(track),
-    ));
+    let style = ScrollAreaStyle {
+        track_thickness_px: SCROLLBAR_TRACK_WIDTH_PX,
+        track_background: SCROLLBAR_TRACK_BACKGROUND,
+        thumb_background: SCROLLBAR_THUMB_BACKGROUND,
+        margin: UiRect::top(Val::Px(4.0)),
+    };
+    let rows_container = spawn_scroll_area(&mut commands, slot, ScrollAxes::Vertical, style);
+    commands.entity(rows_container).insert(SceneTreeRowsContainer);
 }
 
 /// Marks the tree dirty when the *host game* changes the hierarchy — a
@@ -407,6 +365,7 @@ mod tests {
     use bevy_math::Vec2;
     use bv_editor_core::EditorCorePlugin;
     use bv_editor_test_utils::{headless_app, simulate_click, simulate_key, simulate_release, step};
+    use bv_editor_ui::ScrollbarThumb;
     use std::collections::HashSet;
 
     /// A headless app with `EditorCorePlugin` (for `Selection`/hotkeys) and

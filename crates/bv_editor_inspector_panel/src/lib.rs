@@ -30,7 +30,7 @@ use bevy_ui::prelude::*;
 
 use bv_editor_core::Selection;
 use bv_editor_reflect_ui::spawn_component_fields;
-use bv_editor_ui::{InspectorPanelSlot, ScrollbarAxis, ScrollbarThumb};
+use bv_editor_ui::{spawn_scroll_area, InspectorPanelSlot, ScrollAreaStyle, ScrollAxes};
 
 const SECTION_HEADER_COLOR: Color = Color::srgb(0.85, 0.85, 0.85);
 const EMPTY_HINT_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
@@ -95,87 +95,22 @@ impl Plugin for InspectorPanelPlugin {
     }
 }
 
-/// Builds the Inspector's chrome: [`InspectorBody`] (clipped + scrollable on
-/// both axes, docs/UI_FEATURES.md F3) inside an "L-shaped" scroll pane —
-/// `content_row` (body | vertical track) sits above a horizontal track that
-/// spans the full width. Content can overflow horizontally too (e.g. a
-/// `Vec3`/`Color` field's inline boxes on a narrow panel), and a vertical-only
-/// scrollbar left that simply spilling past the panel edge with no way to
-/// reach it. See `bv_editor_scene_panel::spawn_scene_panel_chrome`'s doc
-/// comment for why `flex_grow`/`min_height: Val::Px(0.0)` are needed for
-/// `Overflow::scroll_y()` to actually have something to clip against —
-/// `min_width: Val::Px(0.0)` is the same idea for the horizontal axis, so
-/// `body` can shrink narrower than its content's natural (min-content) width.
+/// Builds the Inspector's chrome: [`InspectorBody`] inside a
+/// [`spawn_scroll_area`] scrollable on both axes (docs/UI_FEATURES.md F3) —
+/// content can overflow horizontally too (e.g. a `Vec3`/`Color` field's
+/// inline boxes on a narrow panel), and a vertical-only scrollbar left that
+/// simply spilling past the panel edge with no way to reach it.
 fn spawn_inspector_chrome(mut commands: Commands, slots: Query<Entity, With<InspectorPanelSlot>>) {
     let Ok(slot) = slots.single() else { return };
 
-    let scroll_area = commands
-        .spawn((
-            Node { flex_direction: FlexDirection::Column, flex_grow: 1.0, min_height: Val::Px(0.0), margin: UiRect::top(Val::Px(4.0)), ..Default::default() },
-            ChildOf(slot),
-        ))
-        .id();
-
-    let content_row = commands
-        .spawn((Node { flex_direction: FlexDirection::Row, flex_grow: 1.0, min_height: Val::Px(0.0), ..Default::default() }, ChildOf(scroll_area)))
-        .id();
-
-    let body = commands
-        .spawn((
-            InspectorBody,
-            Interaction::default(),
-            Node {
-                flex_direction: FlexDirection::Column,
-                flex_grow: 1.0,
-                min_width: Val::Px(0.0),
-                min_height: Val::Px(0.0),
-                overflow: Overflow::scroll(),
-                ..Default::default()
-            },
-            ChildOf(content_row),
-        ))
-        .id();
-
-    let v_track = commands
-        .spawn((
-            // `flex_shrink: 0.0` because a `Node`'s default is `1.0` — without
-            // it, `content_row`'s flexbox would shrink this fixed-width track
-            // to make room for `body`'s (potentially very wide, e.g. a long
-            // debug-formatted field value) content, the same way it's
-            // supposed to shrink `body` itself. A sidebar-style fixed-size
-            // element must opt out of shrinking explicitly.
-            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), flex_shrink: 0.0, margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
-            BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
-            ChildOf(content_row),
-        ))
-        .id();
-
-    commands.spawn((
-        ScrollbarThumb { target: body, axis: ScrollbarAxis::Vertical },
-        Interaction::default(),
-        Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), top: Val::Px(0.0), ..Default::default() },
-        BackgroundColor(SCROLLBAR_THUMB_BACKGROUND),
-        ChildOf(v_track),
-    ));
-
-    let h_track = commands
-        .spawn((
-            // Same `flex_shrink: 0.0` reasoning as `v_track` above, but on
-            // `scroll_area`'s axis (a Column, so its main axis — the one
-            // flex-shrink acts on — is height here, not width).
-            Node { width: Val::Percent(100.0), height: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), flex_shrink: 0.0, margin: UiRect::top(Val::Px(2.0)), ..Default::default() },
-            BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
-            ChildOf(scroll_area),
-        ))
-        .id();
-
-    commands.spawn((
-        ScrollbarThumb { target: body, axis: ScrollbarAxis::Horizontal },
-        Interaction::default(),
-        Node { position_type: PositionType::Absolute, height: Val::Percent(100.0), left: Val::Px(0.0), ..Default::default() },
-        BackgroundColor(SCROLLBAR_THUMB_BACKGROUND),
-        ChildOf(h_track),
-    ));
+    let style = ScrollAreaStyle {
+        track_thickness_px: SCROLLBAR_TRACK_WIDTH_PX,
+        track_background: SCROLLBAR_TRACK_BACKGROUND,
+        thumb_background: SCROLLBAR_THUMB_BACKGROUND,
+        margin: UiRect::top(Val::Px(4.0)),
+    };
+    let body = spawn_scroll_area(&mut commands, slot, ScrollAxes::Both, style);
+    commands.entity(body).insert(InspectorBody);
 }
 
 fn detect_selection_change(selection: Res<Selection>, mut dirty: ResMut<InspectorDirty>) {
@@ -263,6 +198,7 @@ mod tests {
     use bevy_math::Vec2;
     use bv_editor_core::EditorCorePlugin;
     use bv_editor_test_utils::{headless_app, simulate_click, simulate_key, step};
+    use bv_editor_ui::ScrollbarThumb;
 
     /// A headless app with `EditorCorePlugin` (for `Selection`) and
     /// `InspectorPanelPlugin` already running against a bare

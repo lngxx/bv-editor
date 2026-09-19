@@ -68,6 +68,12 @@
 - hover หรือลาก scrollbar thumb เปลี่ยน mouse cursor เป็น `SystemCursorIcon::Grab` (hover)/`Grabbing` (กำลังลาก) จริง ผ่าน `bevy_window::CursorIcon` บน primary window — ระบบใหม่ `scrollbar_cursor_system` (`scrollbar.rs`) ตรรกะเดียวกับ `splitter_cursor_system` ของ F4 ทุกประการ: เพิ่ม resource `ActiveScrollbarDrag` (แทนที่ `Local<Option<Entity>>` เดิมของ `scrollbar_drag_system`) แชร์สถานะ "กำลังลาก thumb ไหนอยู่" กันคนละ system อ่านได้ ลำดับความสำคัญ: กำลังลาก > hover > ไม่มีทั้งคู่ (cursor กลับ default)
 - เทสใหม่ 2 เคส: `hovering_a_scrollbar_thumb_sets_the_grab_cursor_and_clears_it_after`, `dragging_a_scrollbar_thumb_sets_the_grabbing_cursor`
 
+**Refactor (2026-09-19): แยกเป็น widget `ScrollArea`** — ก่อนหน้านี้ `bv_editor_scene_panel::spawn_scene_panel_chrome` และ `bv_editor_inspector_panel::spawn_inspector_chrome` ต่างคน spawn Node tree ของ container+track+thumb เองแยกกัน (มีแค่ component/system เบื้องหลังใน `bv_editor_ui::scrollbar` ที่ใช้ร่วมกัน) — เป็นสาเหตุที่บั๊ก `flex_shrink` (ด้านบน) ต้องแก้ซ้ำ 2 ที่ เพราะไม่มีจุดเดียวที่เป็นความจริงหนึ่งเดียว (single source of truth) ของ "หน้าตา scroll area ควรเป็นยังไง"
+- เพิ่มไฟล์ใหม่ [`bv_editor_ui::scroll_area`](../crates/bv_editor_ui/src/scroll_area.rs) — ฟังก์ชัน `spawn_scroll_area(commands, parent, axes: ScrollAxes, style: ScrollAreaStyle) -> Entity` ที่ spawn โครงสร้างทั้งหมด (root column + content_row + body + track(s)/thumb(s) พร้อม `flex_shrink: 0.0` กัน crush) คืนแค่ entity ของ **body** (ยังไม่มี marker component ของ panel) ให้ caller ทำ `commands.entity(body).insert(YourMarker)` ต่อเอง — เป็น pattern "reserve id แล้ว insert component จริงทีหลัง" แบบเดียวกับที่ `shell.rs` ใช้อยู่แล้ว
+- `ScrollAxes` enum (`Vertical`/`Horizontal`/`Both`) เลือกว่าจะได้ track กี่แกน — `Vertical` ให้โครงสร้างเดียวกับที่ Scene Tree เคยเขียนเอง, `Both` ให้ทรง "L" เดียวกับที่ Components panel เคยเขียนเอง, `Horizontal` เผื่ออนาคต (ยังไม่มีใครใช้ แต่ implement ไว้ให้ครบตาม pattern เดียวกัน)
+- `bv_editor_scene_panel`/`bv_editor_inspector_panel` เปลี่ยนมาเรียก `spawn_scroll_area` แทนของเดิมทั้งหมด — ผลลัพธ์ทาง layout/พฤติกรรมเหมือนเดิมทุกอย่าง (เทสเดิมทั้ง 19+5 เคสผ่านหมดไม่ต้องแก้อะไรเลย) โค้ด `spawn_scene_panel_chrome`/`spawn_inspector_chrome` สั้นลงมาก
+- เทสใหม่ 3 เคสใน `scroll_area.rs`: `vertical_only_gets_exactly_one_vertical_thumb`, `both_axes_gets_one_thumb_per_axis`, `every_track_opts_out_of_flex_shrink` (เทส regression ของบั๊ก `flex_shrink` ตรงๆ ที่จุดเดียวนี้ ครอบคลุมทั้งสอง panel ไปในตัว)
+
 **Phase:** อยู่ในขอบเขต Phase 3 เดิม (Inspector ผ่าน bevy_reflect) ตามที่วางแผนไว้
 
 ---
