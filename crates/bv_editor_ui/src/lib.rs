@@ -32,8 +32,8 @@ pub use icon::{spawn_icon, IconId, IconPlugin, IconRegistry, PLACEHOLDER_ICON};
 pub use scroll_area::{spawn_scroll_area, ScrollAreaStyle, ScrollAxes};
 pub use scrollbar::{clamp_scroll, scrollbar_cursor_system, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarAxis, ScrollbarPlugin, ScrollbarThumb};
 pub use shell::{
-    dock_drop_target_highlight_system, spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, DockRegionRoot, EditorShellEntities, EditorShellRoot, InspectorPanelSlot, ScenePanelSlot, StatusBarSlot,
-    ToolbarSlot, ViewportSlot,
+    dock_drag_cursor_system, dock_drop_target_highlight_system, spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, DockRegionRoot, EditorShellEntities, EditorShellRoot, InspectorPanelSlot,
+    ScenePanelSlot, StatusBarSlot, ToolbarSlot, ViewportSlot,
 };
 pub use splitter::{resize_value, splitter_cursor_system, splitter_drag_system, Splitter, SplitterAxis};
 
@@ -346,5 +346,106 @@ mod tests {
             app.world().get::<CursorIcon>(window).is_none(),
             "cursor icon should clear once nothing is hovered/dragging"
         );
+    }
+
+    #[test]
+    fn hovering_and_dragging_a_dock_tab_sets_the_grab_and_grabbing_cursors() {
+        // docs/UI_FEATURES.md F5: dragging a dock tab had no cursor
+        // feedback at all before this — unlike splitters/scrollbar thumbs,
+        // which already show one.
+        //
+        // Drives the press/release through `bv_editor_test_utils::simulate_click`/
+        // `simulate_release` (real `MouseButtonInput` messages), not a direct
+        // `ButtonInput::press()` call: `drag_and_drop_system`'s drag-start
+        // detection reads `just_pressed`, and with the real `InputPlugin`
+        // active (via `EditorUiPlugin`'s full app, unlike `crate::dnd`'s own
+        // bare-`World` tests), a direct write to that flag is silently wiped
+        // by `mouse_button_input_system` in `PreUpdate` before any `Update`
+        // system — this one included — ever observes it (see that crate's
+        // own module doc comment for the full explanation).
+        use bevy_ui::Interaction;
+        use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon, Window};
+
+        let mut app = setup();
+        app.add_plugins(EditorUiPlugin::default());
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let window = app.world_mut().spawn((Window::default(), PrimaryWindow)).id();
+
+        let world = app.world_mut();
+        let mut tab_buttons = world.query::<(Entity, &dock::DockTabButton)>();
+        let (scene_tab, _) = tab_buttons.iter(world).find(|(_, b)| b.0 == dock::PanelId::Scene).expect("the default Scene Tree tab button should exist");
+
+        world.entity_mut(scene_tab).insert(Interaction::Hovered);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let icon = app.world().get::<CursorIcon>(window).expect("hovering a dock tab should set a cursor icon");
+        assert_eq!(*icon, CursorIcon::System(SystemCursorIcon::Grab));
+
+        // Press-and-hold without releasing: a real drag in progress.
+        app.world_mut().entity_mut(scene_tab).insert(Interaction::Pressed);
+        bv_editor_test_utils::simulate_click(&mut app, bevy_math::Vec2::ZERO);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let icon = app.world().get::<CursorIcon>(window).expect("dragging a dock tab should set a cursor icon");
+        assert_eq!(*icon, CursorIcon::System(SystemCursorIcon::Grabbing));
+
+        // Release over empty space (no drop target hovered) and stop
+        // hovering the tab: the cursor should clear, not get stuck.
+        app.world_mut().entity_mut(scene_tab).insert(Interaction::None);
+        bv_editor_test_utils::simulate_release(&mut app);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        assert!(app.world().get::<CursorIcon>(window).is_none(), "cursor icon should clear once the drag ends and nothing is hovered");
+    }
+
+    #[test]
+    fn dragging_a_dock_tab_onto_another_panel_merges_them_through_the_real_editor_ui_plugin() {
+        // Regression test for the actual reported bug: dragging a dock tab
+        // never merged anything, because `dock_tab_click_system` used to
+        // fire on `just_pressed` — the very frame a drag starts — setting
+        // `DockLayoutDirty` and triggering a full chrome rebuild mid-drag
+        // that despawned the tab button entity the drag depended on. Every
+        // `dock.rs` test up to this point drove `dock_drag_drop_system` and
+        // `dock_tab_click_system` in isolation (bare `World`s, one message
+        // at a time), which is exactly why none of them caught it — this
+        // one drives a real press-hold-move-release sequence through all
+        // three systems together (`dock_tab_click_system`,
+        // `dock_drag_drop_system`, `rebuild_dock_ui_system`) the way a real
+        // drag actually happens, with a `step()` in between each stage so a
+        // mid-drag rebuild (if the bug were still there) would have a
+        // chance to invalidate the entities this test keeps using.
+        use bevy_ui::Interaction;
+
+        let mut app = setup();
+        app.add_plugins(EditorUiPlugin::default());
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let world = app.world_mut();
+        let mut tab_buttons = world.query::<(Entity, &dock::DockTabButton)>();
+        let console_tab = tab_buttons.iter(world).find(|(_, b)| b.0 == dock::PanelId::Console).map(|(e, _)| e).expect("the default Console tab button should exist");
+        let scene_tab = tab_buttons.iter(world).find(|(_, b)| b.0 == dock::PanelId::Scene).map(|(e, _)| e).expect("the default Scene Tree tab button should exist");
+
+        // Press on Console's tab (in the bottom region) and hold.
+        world.entity_mut(console_tab).insert(Interaction::Pressed);
+        bv_editor_test_utils::simulate_click(&mut app, bevy_math::Vec2::ZERO);
+        bv_editor_test_utils::step(&mut app, 1); // the frame the old bug rebuilt mid-drag on
+
+        assert_eq!(
+            app.world().resource::<dock::DockLayout>().region_of(dock::PanelId::Console),
+            Some(dock::DockRegion::Bottom),
+            "still mid-drag, nothing should have moved yet"
+        );
+        let world = app.world_mut();
+        assert!(world.get_entity(console_tab).is_ok(), "the tab button being dragged must survive the press frame, not get despawned by a premature rebuild");
+
+        // Drag over to Scene's tab (in the left region) and release there.
+        world.entity_mut(console_tab).insert(Interaction::None);
+        world.entity_mut(scene_tab).insert(Interaction::Hovered);
+        bv_editor_test_utils::step(&mut app, 1);
+        bv_editor_test_utils::simulate_release(&mut app);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        assert_eq!(app.world().resource::<dock::DockLayout>().region_of(dock::PanelId::Console), Some(dock::DockRegion::Left), "dropping Console's tab onto Scene Tree's should have merged them into the left region");
     }
 }

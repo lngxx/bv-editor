@@ -398,20 +398,34 @@ pub fn dock_drag_drop_system(mut dropped: MessageReader<DragDropped>, targets: Q
 }
 
 /// Clicking a dock tab strip button (press-and-release without becoming a
-/// drag) makes it the active tab of its leaf. Gated on `just_pressed` like
-/// `bv_editor_scene_panel`'s own toolbar buttons, so holding the button
-/// doesn't re-activate every frame. A drag that starts here and ends
-/// elsewhere still activates the tab as a side effect (dragging a tab is a
-/// reasonable enough way to also select it); a drag that starts *and ends*
-/// on the same button (an ordinary click) additionally reaches
-/// [`dock_drag_drop_system`] as a self-targeted merge, which
-/// [`DockLayout::merge_onto`]'s `dragged == target_anchor` guard already
-/// turns into a no-op — this system is what actually switches the tab.
+/// drag) makes it the active tab of its leaf. Gated on `just_released`,
+/// *not* `just_pressed` (unlike `bv_editor_scene_panel`'s own toolbar
+/// buttons) — this was a real bug: firing on press set
+/// [`DockLayoutDirty`] on the exact frame a drag starts, and
+/// [`crate::shell::rebuild_dock_ui_system`] reacting to that immediately
+/// despawns and respawns the whole dock chrome, including the tab button
+/// entity the pointer is still pressed on mid-gesture. That silently broke
+/// every drag before it could reach a drop target — the tab strip button
+/// the drag "started from" no longer existed by the next frame, and a
+/// freshly-spawned replacement has no memory of ever being pressed. Firing
+/// on release instead (using the same `Interaction::Hovered | Pressed`
+/// check [`drag_and_drop_system`] itself uses to find the drop target, since
+/// by release time `Interaction` may already have moved on from `Pressed`)
+/// means the rebuild never happens until the drag gesture is already over,
+/// which is also *when* [`dock_drag_drop_system`] resolves a drop — a plain
+/// click (no movement) and a same-target drag both still land here as a
+/// self-targeted merge (harmless no-op per [`DockLayout::merge_onto`]'s
+/// `dragged == target_anchor` guard) with this system actually switching
+/// the tab; a real drag onto a *different* target gets its final active-tab
+/// state from [`DockLayout::merge_onto`]/[`DockLayout::split_onto`] instead,
+/// since this system's `.chain()` order runs before
+/// [`dock_drag_drop_system`] and its `activate` gets overridden by
+/// whichever one of those actually fires.
 pub fn dock_tab_click_system(mouse_buttons: Res<ButtonInput<MouseButton>>, buttons: Query<(&Interaction, &DockTabButton)>, mut layout: ResMut<DockLayout>, mut dirty: ResMut<DockLayoutDirty>) {
-    if !mouse_buttons.just_pressed(MouseButton::Left) {
+    if !mouse_buttons.just_released(MouseButton::Left) {
         return;
     }
-    if let Some((_, button)) = buttons.iter().find(|(interaction, _)| **interaction == Interaction::Pressed) {
+    if let Some((_, button)) = buttons.iter().find(|(interaction, _)| matches!(interaction, Interaction::Hovered | Interaction::Pressed)) {
         layout.activate(button.0);
         dirty.0 = true;
     }
@@ -678,7 +692,11 @@ mod tests {
     }
 
     #[test]
-    fn clicking_a_tab_button_activates_it_only_on_just_pressed() {
+    fn clicking_a_tab_button_activates_it_only_on_release() {
+        // Regression test: this used to fire on `just_pressed`, which set
+        // `DockLayoutDirty` on the very frame a drag starts — triggering a
+        // chrome rebuild mid-drag that silently broke every drag before it
+        // could reach a drop target (see this system's own doc comment).
         let mut world = bevy_ecs::world::World::new();
         let mut layout = DockLayout::default();
         assert!(layout.merge_onto(Console, Assets)); // bottom: Tabs[Assets, Console], active Console
@@ -690,10 +708,13 @@ mod tests {
 
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(dock_tab_click_system);
-        schedule.run(&mut world);
-        assert_eq!(world.resource::<DockLayout>().bottom, DockNode::Tabs { tabs: vec![Assets, Console], active: 1 }, "no click registered yet (mouse button never pressed)");
 
         world.resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        schedule.run(&mut world);
+        assert_eq!(world.resource::<DockLayout>().bottom, DockNode::Tabs { tabs: vec![Assets, Console], active: 1 }, "pressing (not yet releasing) must not activate — that's the exact bug this test guards against");
+        assert!(!world.resource::<DockLayoutDirty>().0);
+
+        world.resource_mut::<ButtonInput<MouseButton>>().release(MouseButton::Left);
         schedule.run(&mut world);
 
         assert_eq!(world.resource::<DockLayout>().bottom, DockNode::Tabs { tabs: vec![Assets, Console], active: 0 });

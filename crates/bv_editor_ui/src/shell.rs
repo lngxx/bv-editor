@@ -22,6 +22,7 @@ use bevy_color::Color;
 use bevy_ecs::prelude::*;
 use bevy_text::TextColor;
 use bevy_ui::prelude::*;
+use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 
 use crate::breakpoint::{bottom_panel_height_px, side_panel_width_px, LayoutBreakpoint};
 use crate::dnd::{drag_and_drop_system, DragPayload, DragSource, DragState, DropTarget};
@@ -508,14 +509,46 @@ pub fn dock_drop_target_highlight_system(drag: Res<DragState>, layout: Res<DockL
     }
 }
 
+/// Shows a `Grab`/`Grabbing` cursor while hovering/dragging a dock tab
+/// strip button — the drag affordance docs/UI_FEATURES.md F5 was missing
+/// entirely (unlike [`crate::splitter::splitter_cursor_system`]/
+/// [`crate::scrollbar::scrollbar_cursor_system`], which already show a
+/// cursor for their own drag handles). Same icon values as the scrollbar
+/// thumb's own cursor, and the same "only clear an icon I could plausibly
+/// own" guard those two systems use to avoid stomping each other — see
+/// their doc comments for the full reasoning. One narrow gap accepted here
+/// rather than fixed: because this reuses the *same* `Grab`/`Grabbing`
+/// values as the scrollbar (there's no third "this is mine" marker beyond
+/// the icon's own value), a frame where a scrollbar thumb is hovered but
+/// this system finds nothing dock-related to show could misidentify that
+/// `Grab` as its own leftover and clear it — spatially the two can't
+/// actually be hovered at once (different widgets can't share a cursor
+/// position), so the failure mode is at most a one-frame flicker on a
+/// rare same-tick race, not a stuck or wrong cursor.
+pub fn dock_drag_cursor_system(drag: Res<DragState>, tab_buttons: Query<&Interaction, With<DockTabButton>>, window: Query<(Entity, Option<&CursorIcon>), With<PrimaryWindow>>, mut commands: Commands) {
+    let Ok((window, current_icon)) = window.single() else { return };
+
+    let dragging_a_panel = matches!(drag.payload, Some(DragPayload::Panel(_)));
+    let hovering_a_tab = tab_buttons.iter().any(|interaction| matches!(interaction, Interaction::Hovered | Interaction::Pressed));
+
+    if dragging_a_panel {
+        commands.entity(window).insert(CursorIcon::System(SystemCursorIcon::Grabbing));
+    } else if hovering_a_tab {
+        commands.entity(window).insert(CursorIcon::System(SystemCursorIcon::Grab));
+    } else if matches!(current_icon, Some(CursorIcon::System(SystemCursorIcon::Grab)) | Some(CursorIcon::System(SystemCursorIcon::Grabbing))) {
+        commands.entity(window).remove::<CursorIcon>();
+    }
+}
+
 /// Registers the systems that drive docking (docs/UI_FEATURES.md F5):
 /// tab clicks and drag-drop both mutate [`DockLayout`] and set
 /// [`DockLayoutDirty`]; [`rebuild_dock_ui_system`] re-renders when it's
-/// set; the highlight system runs unconditionally. [`crate::EditorUiPlugin`]
-/// calls this — pulled out to its own function only so `lib.rs`'s
-/// `build` doesn't have to spell out the whole ordering chain inline.
+/// set; the highlight and cursor systems run unconditionally.
+/// [`crate::EditorUiPlugin`] calls this — pulled out to its own function
+/// only so `lib.rs`'s `build` doesn't have to spell out the whole ordering
+/// chain inline.
 pub(crate) fn add_dock_systems(app: &mut bevy_app::App) {
     use bevy_app::Update;
     app.add_systems(Update, (dock_tab_click_system, dock_drag_drop_system, rebuild_dock_ui_system).chain().after(drag_and_drop_system));
-    app.add_systems(Update, dock_drop_target_highlight_system);
+    app.add_systems(Update, (dock_drop_target_highlight_system, dock_drag_cursor_system).after(drag_and_drop_system));
 }
