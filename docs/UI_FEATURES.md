@@ -63,6 +63,11 @@
 - เทสใหม่ 3 เคสใน `bv_editor_ui/src/scrollbar.rs`: `sync_sizes_a_horizontal_thumb_by_width_not_height`, `dragging_a_horizontal_thumb_scrolls_the_target_on_x`, และเทส regression ของ deadlock bug ด้านบน (`sync_can_reveal_a_track_whose_own_computed_size_is_still_zero`)
 - **ข้อควรระวังตอน debug ฟีเจอร์นี้:** headless test fake `ComputedNode` ตรงๆ เลยไม่มีทางเจอ deadlock bug ด้านบนได้เอง (fake ค่าไม่ผ่าน `Display::None` จริง) ต้องรันแอปจริง (`ui_gallery`) แล้วอ่าน log ค่า track/visible/content สดๆ ถึงจับได้ — ถ้าจะแก้ scrollbar ต่อในอนาคต แนะนำ reproduce ผ่านแอปจริงเสมอ ไม่ใช่เชื่อแค่ headless test ผ่าน
 
+**Polish (2026-09-19): track หนาขึ้น + cursor feedback ตอน hover/ลาก**
+- `SCROLLBAR_TRACK_WIDTH_PX` (ทั้ง `bv_editor_scene_panel` และ `bv_editor_inspector_panel`) จาก 8px → 12px — track/thumb แนวนอนที่เพิ่งเพิ่มบางเกินไปจนแทบมองไม่เห็น/กดยาก โดยเฉพาะตอน `ui_scale` default 0.5 (แสดงจริงแค่ ~4px จอ) เพิ่มพร้อมกันทั้งสองแกนเพื่อความสมมาตร
+- hover หรือลาก scrollbar thumb เปลี่ยน mouse cursor เป็น `SystemCursorIcon::Grab` (hover)/`Grabbing` (กำลังลาก) จริง ผ่าน `bevy_window::CursorIcon` บน primary window — ระบบใหม่ `scrollbar_cursor_system` (`scrollbar.rs`) ตรรกะเดียวกับ `splitter_cursor_system` ของ F4 ทุกประการ: เพิ่ม resource `ActiveScrollbarDrag` (แทนที่ `Local<Option<Entity>>` เดิมของ `scrollbar_drag_system`) แชร์สถานะ "กำลังลาก thumb ไหนอยู่" กันคนละ system อ่านได้ ลำดับความสำคัญ: กำลังลาก > hover > ไม่มีทั้งคู่ (cursor กลับ default)
+- เทสใหม่ 2 เคส: `hovering_a_scrollbar_thumb_sets_the_grab_cursor_and_clears_it_after`, `dragging_a_scrollbar_thumb_sets_the_grabbing_cursor`
+
 **Phase:** อยู่ในขอบเขต Phase 3 เดิม (Inspector ผ่าน bevy_reflect) ตามที่วางแผนไว้
 
 ---

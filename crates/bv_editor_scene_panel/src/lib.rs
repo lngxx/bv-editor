@@ -48,7 +48,7 @@ const ROW_HOVER_BACKGROUND: Color = Color::srgb(0.22, 0.22, 0.26);
 const ROW_SELECTED_BACKGROUND: Color = Color::srgb(0.24, 0.35, 0.55);
 const TOOLBAR_BUTTON_BACKGROUND: Color = Color::srgb(0.22, 0.22, 0.25);
 const TEXT_COLOR: Color = Color::srgb(0.85, 0.85, 0.85);
-const SCROLLBAR_TRACK_WIDTH_PX: f32 = 8.0;
+const SCROLLBAR_TRACK_WIDTH_PX: f32 = 12.0;
 const SCROLLBAR_TRACK_BACKGROUND: Color = Color::srgb(0.12, 0.12, 0.13);
 const SCROLLBAR_THUMB_BACKGROUND: Color = Color::srgb(0.35, 0.35, 0.4);
 
@@ -206,7 +206,12 @@ fn spawn_scene_panel_chrome(mut commands: Commands, slots: Query<Entity, With<Sc
 
     let track = commands
         .spawn((
-            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
+            // `flex_shrink: 0.0` — see the identical reasoning on
+            // `bv_editor_inspector_panel::spawn_inspector_chrome`'s `v_track`
+            // (a `Node`'s default `flex_shrink` of `1.0` would otherwise let
+            // `scroll_row` crush this fixed-width track to make room for
+            // unusually wide row content).
+            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), flex_shrink: 0.0, margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
             BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
             ChildOf(scroll_row),
         ))

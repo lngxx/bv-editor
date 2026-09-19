@@ -25,6 +25,7 @@ use bevy_input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseBut
 use bevy_input::ButtonInput;
 use bevy_math::Vec2;
 use bevy_ui::{ComputedNode, Display, Interaction, Node, ScrollPosition, Val};
+use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 
 /// Thumb never shrinks below this, in logical pixels, even when the content
 /// is much taller than the visible area — otherwise it'd disappear entirely
@@ -107,26 +108,34 @@ pub fn clamp_scroll(current: f32, delta: f32, visible_length: f32, content_lengt
     (current + delta).clamp(0.0, max_scroll)
 }
 
+/// Which scrollbar thumb (if any) is currently being dragged, shared with
+/// [`scrollbar_cursor_system`] so the "grabbing" cursor stays locked to the
+/// drag for its whole duration even if a fast drag momentarily carries the
+/// pointer off the thumb's thin hit area (which would otherwise drop its
+/// `Interaction` back to `None` mid-drag) — same idea as
+/// [`crate::splitter::ActiveSplitterDrag`].
+#[derive(Resource, Default)]
+pub struct ActiveScrollbarDrag(pub Option<Entity>);
+
 /// Drives whichever [`ScrollbarThumb`] is currently held: press-and-drag it
-/// to scroll its `target`. At most one thumb drags at a time — same
-/// `Local<Option<Entity>>` pattern as [`crate::splitter::splitter_drag_system`].
+/// to scroll its `target`. At most one thumb drags at a time.
 pub fn scrollbar_drag_system(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     thumbs: Query<(Entity, &Interaction, &ScrollbarThumb, &ChildOf)>,
     tracks: Query<&ComputedNode>,
     mut targets: Query<(&ComputedNode, &mut ScrollPosition)>,
-    mut dragging: Local<Option<Entity>>,
+    mut dragging: ResMut<ActiveScrollbarDrag>,
 ) {
     if !mouse_buttons.pressed(MouseButton::Left) {
-        *dragging = None;
-    } else if dragging.is_none() {
-        *dragging = thumbs.iter().find(|(_, interaction, ..)| **interaction == Interaction::Pressed).map(|(entity, ..)| entity);
+        dragging.0 = None;
+    } else if dragging.0.is_none() {
+        dragging.0 = thumbs.iter().find(|(_, interaction, ..)| **interaction == Interaction::Pressed).map(|(entity, ..)| entity);
     }
 
-    let Some(active) = *dragging else { return };
+    let Some(active) = dragging.0 else { return };
     let Ok((_, _, thumb, child_of)) = thumbs.get(active) else {
-        *dragging = None;
+        dragging.0 = None;
         return;
     };
     let motion = match thumb.axis {
@@ -243,17 +252,40 @@ pub fn sync_scrollbar_thumb_system(
     }
 }
 
-/// Registers the three systems above. A consumer that spawns
-/// [`ScrollbarThumb`]s outside the full shell (e.g. a panel crate's own
-/// tests) should add this itself, guarded by
-/// `app.is_plugin_added::<ScrollbarPlugin>()`, the same convention
-/// [`crate::dnd::DragAndDropPlugin`] uses.
+/// docs/UI_FEATURES.md: hovering or dragging a scrollbar thumb shows a
+/// "grab"/"grabbing" cursor (`SystemCursorIcon::Grab`/`Grabbing`), the same
+/// convention file managers and browsers use for draggable handles, so the
+/// thumb reads as draggable rather than just a lighter-coloured rectangle —
+/// same shape as [`crate::splitter::splitter_cursor_system`]. An active drag
+/// ([`ActiveScrollbarDrag`]) takes priority over hover so the cursor doesn't
+/// flicker back to default mid-drag; clears back to the platform default
+/// once neither applies. No-ops under a headless app with no primary window
+/// (e.g. tests).
+pub fn scrollbar_cursor_system(dragging: Res<ActiveScrollbarDrag>, thumbs: Query<&Interaction, With<ScrollbarThumb>>, window: Query<Entity, With<PrimaryWindow>>, mut commands: Commands) {
+    let Ok(window) = window.single() else { return };
+
+    let hovered = thumbs.iter().any(|interaction| matches!(interaction, Interaction::Hovered | Interaction::Pressed));
+
+    if dragging.0.is_some() {
+        commands.entity(window).insert(CursorIcon::System(SystemCursorIcon::Grabbing));
+    } else if hovered {
+        commands.entity(window).insert(CursorIcon::System(SystemCursorIcon::Grab));
+    } else {
+        commands.entity(window).remove::<CursorIcon>();
+    }
+}
+
+/// Registers the systems above. A consumer that spawns [`ScrollbarThumb`]s
+/// outside the full shell (e.g. a panel crate's own tests) should add this
+/// itself, guarded by `app.is_plugin_added::<ScrollbarPlugin>()`, the same
+/// convention [`crate::dnd::DragAndDropPlugin`] uses.
 #[derive(Default)]
 pub struct ScrollbarPlugin;
 
 impl Plugin for ScrollbarPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (scrollbar_drag_system, wheel_scroll_system, sync_scrollbar_thumb_system));
+        app.init_resource::<ActiveScrollbarDrag>();
+        app.add_systems(Update, (scrollbar_drag_system, wheel_scroll_system, sync_scrollbar_thumb_system, scrollbar_cursor_system).chain());
     }
 }
 
@@ -473,5 +505,43 @@ mod tests {
         // Track 200px, content 400px -> dragging the thumb 25px moves the
         // content by 25 * (400/200) = 50px.
         assert_eq!(app.world().get::<ScrollPosition>(target).unwrap().0.y, 50.0);
+    }
+
+    #[test]
+    fn hovering_a_scrollbar_thumb_sets_the_grab_cursor_and_clears_it_after() {
+        use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon, Window};
+
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(ScrollbarPlugin);
+        let window = app.world_mut().spawn((Window::default(), PrimaryWindow)).id();
+        let thumb = app.world_mut().spawn((ScrollbarThumb { target: Entity::PLACEHOLDER, axis: ScrollbarAxis::Vertical }, Interaction::default())).id();
+
+        app.world_mut().entity_mut(thumb).insert(Interaction::Hovered);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let icon = app.world().get::<CursorIcon>(window).expect("hovering a scrollbar thumb should set a cursor icon");
+        assert_eq!(*icon, CursorIcon::System(SystemCursorIcon::Grab));
+
+        app.world_mut().entity_mut(thumb).insert(Interaction::None);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        assert!(app.world().get::<CursorIcon>(window).is_none(), "cursor icon should clear once nothing is hovered/dragging");
+    }
+
+    #[test]
+    fn dragging_a_scrollbar_thumb_sets_the_grabbing_cursor() {
+        use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon, Window};
+
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(ScrollbarPlugin);
+        let window = app.world_mut().spawn((Window::default(), PrimaryWindow)).id();
+        let (_target, _track, thumb) = setup_scrollbar(&mut app, 100.0, 400.0, 200.0);
+
+        app.world_mut().entity_mut(thumb).insert(Interaction::Pressed);
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(MouseButton::Left);
+        bv_editor_test_utils::step(&mut app, 1);
+
+        let icon = app.world().get::<CursorIcon>(window).expect("dragging a scrollbar thumb should set a cursor icon");
+        assert_eq!(*icon, CursorIcon::System(SystemCursorIcon::Grabbing));
     }
 }

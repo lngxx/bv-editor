@@ -22,7 +22,7 @@ mod splitter;
 
 pub use breakpoint::{bottom_panel_height_px, breakpoint_for_width, side_panel_width_px, LayoutBreakpoint};
 pub use dnd::{drag_and_drop_system, DragAndDropPlugin, DragDropped, DragPayload, DragSource, DragState, DropTarget};
-pub use scrollbar::{clamp_scroll, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarAxis, ScrollbarPlugin, ScrollbarThumb};
+pub use scrollbar::{clamp_scroll, scrollbar_cursor_system, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarAxis, ScrollbarPlugin, ScrollbarThumb};
 pub use shell::{
     spawn_editor_shell, AssetsPanelSlot, ConsolePanelSlot, EditorShellEntities, EditorShellRoot,
     InspectorPanelSlot, ScenePanelSlot, StatusBarSlot, ToolbarSlot, ViewportSlot,

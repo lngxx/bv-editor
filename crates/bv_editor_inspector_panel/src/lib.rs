@@ -34,7 +34,7 @@ use bv_editor_ui::{InspectorPanelSlot, ScrollbarAxis, ScrollbarThumb};
 
 const SECTION_HEADER_COLOR: Color = Color::srgb(0.85, 0.85, 0.85);
 const EMPTY_HINT_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
-const SCROLLBAR_TRACK_WIDTH_PX: f32 = 8.0;
+const SCROLLBAR_TRACK_WIDTH_PX: f32 = 12.0;
 const SCROLLBAR_TRACK_BACKGROUND: Color = Color::srgb(0.12, 0.12, 0.13);
 const SCROLLBAR_THUMB_BACKGROUND: Color = Color::srgb(0.35, 0.35, 0.4);
 
@@ -138,7 +138,13 @@ fn spawn_inspector_chrome(mut commands: Commands, slots: Query<Entity, With<Insp
 
     let v_track = commands
         .spawn((
-            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
+            // `flex_shrink: 0.0` because a `Node`'s default is `1.0` — without
+            // it, `content_row`'s flexbox would shrink this fixed-width track
+            // to make room for `body`'s (potentially very wide, e.g. a long
+            // debug-formatted field value) content, the same way it's
+            // supposed to shrink `body` itself. A sidebar-style fixed-size
+            // element must opt out of shrinking explicitly.
+            Node { width: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), height: Val::Percent(100.0), flex_shrink: 0.0, margin: UiRect::left(Val::Px(2.0)), ..Default::default() },
             BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
             ChildOf(content_row),
         ))
@@ -154,7 +160,10 @@ fn spawn_inspector_chrome(mut commands: Commands, slots: Query<Entity, With<Insp
 
     let h_track = commands
         .spawn((
-            Node { width: Val::Percent(100.0), height: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), margin: UiRect::top(Val::Px(2.0)), ..Default::default() },
+            // Same `flex_shrink: 0.0` reasoning as `v_track` above, but on
+            // `scroll_area`'s axis (a Column, so its main axis — the one
+            // flex-shrink acts on — is height here, not width).
+            Node { width: Val::Percent(100.0), height: Val::Px(SCROLLBAR_TRACK_WIDTH_PX), flex_shrink: 0.0, margin: UiRect::top(Val::Px(2.0)), ..Default::default() },
             BackgroundColor(SCROLLBAR_TRACK_BACKGROUND),
             ChildOf(scroll_area),
         ))
