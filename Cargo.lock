@@ -2008,14 +2008,17 @@ name = "bv_editor_ui"
 version = "0.1.0"
 dependencies = [
  "bevy_app",
+ "bevy_asset",
  "bevy_color",
  "bevy_ecs",
+ "bevy_image",
  "bevy_input",
  "bevy_math",
  "bevy_text",
  "bevy_ui",
  "bevy_window",
  "bv_editor_test_utils",
+ "wgpu-types",
 ]
 
 [[package]]

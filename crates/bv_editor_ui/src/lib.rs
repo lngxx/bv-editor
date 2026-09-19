@@ -16,6 +16,7 @@
 
 mod breakpoint;
 mod dnd;
+mod icon;
 mod scroll_area;
 mod scrollbar;
 mod shell;
@@ -23,6 +24,7 @@ mod splitter;
 
 pub use breakpoint::{bottom_panel_height_px, breakpoint_for_width, side_panel_width_px, LayoutBreakpoint};
 pub use dnd::{drag_and_drop_system, DragAndDropPlugin, DragDropped, DragPayload, DragSource, DragState, DropTarget};
+pub use icon::{spawn_icon, IconId, IconPlugin, IconRegistry, PLACEHOLDER_ICON};
 pub use scroll_area::{spawn_scroll_area, ScrollAreaStyle, ScrollAxes};
 pub use scrollbar::{clamp_scroll, scrollbar_cursor_system, scrollbar_drag_system, sync_scrollbar_thumb_system, thumb_geometry, wheel_scroll_system, ScrollbarAxis, ScrollbarPlugin, ScrollbarThumb};
 pub use shell::{
@@ -76,6 +78,9 @@ impl Plugin for EditorUiPlugin {
         if !app.is_plugin_added::<ScrollbarPlugin>() {
             app.add_plugins(ScrollbarPlugin);
         }
+        if !app.is_plugin_added::<IconPlugin>() {
+            app.add_plugins(IconPlugin);
+        }
         app.insert_resource(bevy_ui::UiScale(self.ui_scale));
         app.init_resource::<splitter::ActiveSplitterDrag>();
         app.add_systems(Startup, spawn_shell_on_startup.in_set(EditorShellSet));
@@ -96,11 +101,26 @@ fn spawn_shell_on_startup(mut commands: Commands, windows: Query<&Window, With<P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy_asset::{AssetApp, AssetPlugin};
+    use bevy_image::Image;
     use bevy_ui::Node;
+
+    /// `EditorUiPlugin` now includes `IconPlugin` (F6), whose `Startup`
+    /// system needs `Assets<Image>` for the built-in placeholder icon's
+    /// procedural sprite sheet — same reasoning as `bv_editor_viewport`'s
+    /// own `setup()`: the first thing in this crate to need asset support
+    /// adds `AssetPlugin` itself rather than pushing that onto
+    /// `bv_editor_test_utils` for tests that don't need it.
+    fn setup() -> bevy_app::App {
+        let mut app = bv_editor_test_utils::headless_app();
+        app.add_plugins(AssetPlugin::default());
+        app.init_asset::<Image>();
+        app
+    }
 
     #[test]
     fn plugin_builds_without_panicking_headless() {
-        let mut app = bv_editor_test_utils::headless_app();
+        let mut app = setup();
         app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
     }
@@ -109,7 +129,7 @@ mod tests {
     fn headless_shell_defaults_to_normal_breakpoint() {
         // No `Window` resource exists under `MinimalPlugins`, so startup
         // should fall back to `LayoutBreakpoint::Normal` rather than panic.
-        let mut app = bv_editor_test_utils::headless_app();
+        let mut app = setup();
         app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
 
@@ -187,7 +207,7 @@ mod tests {
         use bevy_math::Vec2;
         use bevy_ui::{Interaction, Val};
 
-        let mut app = bv_editor_test_utils::headless_app();
+        let mut app = setup();
         app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
 
@@ -231,7 +251,7 @@ mod tests {
         use bevy_math::Vec2;
         use bevy_ui::{Interaction, Val};
 
-        let mut app = bv_editor_test_utils::headless_app();
+        let mut app = setup();
         app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
 
@@ -270,7 +290,7 @@ mod tests {
         use bevy_ui::Interaction;
         use bevy_window::{CursorIcon, PrimaryWindow, SystemCursorIcon, Window};
 
-        let mut app = bv_editor_test_utils::headless_app();
+        let mut app = setup();
         app.add_plugins(EditorUiPlugin::default());
         bv_editor_test_utils::step(&mut app, 1);
 

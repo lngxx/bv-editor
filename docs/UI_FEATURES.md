@@ -119,9 +119,27 @@
 
 ---
 
-## F6 — Icon: ทางเพิ่ม icon มาใช้ใน UI
+## F6 — Icon: ทางเพิ่ม icon มาใช้ใน UI ✅ implemented (ขั้นต่ำ — registry เท่านั้น)
 
-**สถานะปัจจุบัน:** ไม่มีเลย — ไม่มี icon asset, icon font, หรือ icon widget ในโค้ดตอนนี้ (ค้นทั้ง workspace ไม่เจอคำว่า "icon" เลยนอกจาก `docs/DESIGN.md` ที่พูดถึง `ManipulatorDescriptor { name, icon, hotkey }` เป็นแค่ field ที่ยังไม่ implement — ดู section 7.2 ของ DESIGN.md) Toolbar/panel title ปัจจุบันเป็นตัวหนังสือล้วน
+**สถานะ:** ทำเสร็จแล้วเฉพาะส่วน "โครงสร้างพื้นฐาน" ตามที่สรุปลำดับแนะนำไว้ด้านล่าง ("ทำ `IconRegistry` ขั้นต่ำ ... ไม่ต้องรอให้ set icon ครบทุกจุดก่อนเริ่ม") — ใหม่ทั้งไฟล์ [`bv_editor_ui::icon`](../crates/bv_editor_ui/src/icon.rs):
+
+- **ไม่ใช้ `TextureAtlasLayout`/`TextureAtlas` asset เลย** ต่างจากข้อเสนอเดิมในสเปกด้านล่าง (sprite sheet/texture atlas) — ระหว่าง implement พบว่า `bevy_ui`'s `ImageNode` มี field `rect: Option<Rect>` (พิกัดพิกเซล) อยู่แล้วในตัว ซึ่ง doc comment ของมันเองบอกตรงๆ ว่าเป็น "an easy one-off alternative to using a `TextureAtlas`" — ใช้ field นี้ตรงๆ พอสำหรับ "sprite sheet เดียว + rect ต่อ icon" โดยไม่ต้องลงทะเบียน asset type ใหม่ (`TextureAtlasLayout`) หรือพึ่ง `Assets<TextureAtlasLayout>`/`Handle<TextureAtlasLayout>` เลย ตรงกับหลักการ "built-in ก่อนเสมอ" ยิ่งกว่าแผนเดิมอีกขั้นหนึ่ง (เหมือนที่ F7 เจอกับ `Node.min_*`/`max_*`)
+- `IconId(&'static str)` เป็น string key ธรรมดา (ไม่ใช่ enum ปิด) ตามหลักการเดียวกับ `bv_editor_core::HotkeyRegistry` ที่ key hotkey action ด้วย string — extension ลงทะเบียน icon ของตัวเองได้โดยที่ `bv_editor_ui` ไม่ต้องรู้จักล่วงหน้า
+- `IconRegistry` (resource) เก็บ `IconId → (Handle<Image>, Rect)` ผ่าน `register()`/`image_node()` — `image_node()` คืน `None` ถ้าไม่มีใครลงทะเบียน id นั้น ให้ caller "ไม่วาดอะไรเลย" แทนที่จะ panic (คตินิยมเดียวกับ `*Slot`-less startup system ที่มีอยู่แล้วในโปรเจกต์)
+- `spawn_icon(commands, parent, registry, id, size_px) -> Option<Entity>` widget ระดับ spawn — คืน `None` และไม่ spawn อะไรเลยถ้า id ไม่ได้ลงทะเบียน (ไม่ fallback เป็นกล่องเปล่า เพราะ unregistered id ถือเป็นบั๊กของ caller ที่ต้องแก้ ไม่ใช่ state ที่ควร render เผื่อไว้)
+- **built-in icon เดียว** `PLACEHOLDER_ICON` (`"bv_editor.placeholder"`) — สี่เหลี่ยมสีเทาแบนๆ 16×16px สร้างแบบ procedural ผ่าน `Image::new_fill` ตอน `Startup` (เหตุผลเดียวกับที่ `bv_editor_viewport`'s render-target image เป็น procedural: repo นี้ยังไม่มี asset pipeline จริง และสี่เหลี่ยมแบนไม่ต้องพึ่งเครื่องมือนอกวงเลย) — มีไว้พิสูจน์ว่า pipeline registry→sprite sheet→`ImageNode` ทำงานจริงครบวงจร ไม่ใช่ icon art จริง
+- `IconPlugin` (`init_resource::<IconRegistry>()` + ระบบ `Startup` ที่ลงทะเบียน built-in icon) ต่อเข้ากับ `EditorUiPlugin::build` แบบ idempotent เหมือน `DragAndDropPlugin`/`ScrollbarPlugin` เดิม
+- เพิ่ม dependency ใหม่ 3 ตัวใน `bv_editor_ui`: `bevy_asset`, `bevy_image` (สำหรับ `Handle<Image>`/`Image`) และ `wgpu-types` ตรงๆ (สำหรับ `Extent3d`/`TextureDimension`/`TextureFormat` เท่านั้น) — เลือก `wgpu-types` แทน `bevy_render` เพราะเป็น crate ต้นทางที่ `bevy_image` เอง import type พวกนี้มาอยู่แล้ว (ไม่ re-export ให้ใช้ตรงๆ) หนักกว่าเดิมน้อยกว่าการดึง `bevy_render` ทั้งก้อน (ซึ่งลาก `wgpu` เต็มๆ) เข้ามาทั้งที่ `bv_editor_ui` ไม่มี renderer ของตัวเองเลย
+- **ผลข้างเคียงที่ต้องแก้:** `EditorUiPlugin` เดิมใช้ headless-test ได้โดยไม่ต้องมี `AssetPlugin` (แค่ `MinimalPlugins`) — พอ `IconPlugin`'s Startup system ต้องการ `ResMut<Assets<Image>>` เทสเดิม 5 เคสใน `bv_editor_ui/src/lib.rs` ที่ compose `EditorUiPlugin::default()` ตรงๆ (ไม่ใช่เทสที่เรียก `spawn_editor_shell` ตรงๆ ซึ่งไม่ผ่าน plugin) ต้องเพิ่ม `AssetPlugin` + `init_asset::<Image>()` ก่อน — เพิ่ม `setup()` helper ในเทสไฟล์นั้นตาม pattern เดียวกับที่ `bv_editor_viewport`/`bv_editor`'s เทสไฟล์ใช้อยู่แล้ว (ไม่ใช่บั๊กใหม่ แค่เป็นผลตรงไปตรงมาจากการเพิ่ม asset dependency)
+- เทสใหม่ 5 เคสใน `icon.rs`: unregistered id คืน `None`, register แล้ว resolve ได้ rect/handle ถูกต้อง, `IconPlugin` ลงทะเบียน built-in placeholder จริงตอน startup, `spawn_icon` spawn entity ขนาดถูกและเป็นลูกของ parent จริง, และ `spawn_icon` ไม่ spawn อะไรเลยเมื่อ id ไม่รู้จัก
+
+**ยังไม่ทำ (ตั้งใจเว้นไว้ตามคำแนะนำเดิม "ไม่ต้องรอให้ set icon ครบทุกจุดก่อนเริ่ม"):**
+- ยังไม่ได้ต่อเข้ากับ toolbar (ปุ่ม manipulator ยังไม่มีจริง แค่ label ลอย), panel/tab title bar (รอ F5), หรือ Scene Tree row (nice-to-have เดิม) เลยสักจุดเดียว — เมื่อ F5/toolbar จริงเริ่มทำ ค่อยเรียก `spawn_icon`/`IconRegistry::image_node` ที่มีอยู่แล้วได้ทันที ไม่ต้องแก้ core ของ `icon.rs`
+- ยังไม่มี built-in icon set ที่แยกตามประเภท entity/panel จริง (มีแค่ placeholder เดียว) และยังไม่มีทาง "extension ใส่ icon ของตัวเองแบบ asset-reference" ที่เป็น API สำเร็จรูป (ตอนนี้ extension เรียก `IconRegistry::register` เองตรงๆ ได้อยู่แล้วผ่าน `ResMut<IconRegistry>` ก็จริง แต่ยังไม่มี helper โหลดจากไฟล์ภาพจริงให้)
+
+**สเปกเดิม (สำหรับอ้างอิง — งานที่ยังไม่ทำด้านบนอิงจากนี้):**
+
+**สถานะปัจจุบันตอนร่างสเปก (ก่อน implement):** ไม่มีเลย — ไม่มี icon asset, icon font, หรือ icon widget ในโค้ดตอนนั้น (ค้นทั้ง workspace ไม่เจอคำว่า "icon" เลยนอกจาก `docs/DESIGN.md` ที่พูดถึง `ManipulatorDescriptor { name, icon, hotkey }` เป็นแค่ field ที่ยังไม่ implement — ดู section 7.2 ของ DESIGN.md) Toolbar/panel title ปัจจุบันเป็นตัวหนังสือล้วน
 
 **สเปก:**
 - ต้องมีทาง "เพิ่ม icon ใหม่" ที่ **ไม่ต้องแก้ core crate** เหมือนหลักการ extension อื่นๆ ของโปรเจกต์นี้ (เข้ากับ requirement ข้อ 3 ของ DESIGN.md — extension เพิ่ม panel/manipulator ใหม่ได้ ถ้ามันมี icon ของตัวเอง ก็ต้องลงทะเบียน icon เองได้เหมือนกัน)
@@ -167,7 +185,7 @@
 3. ~~**F7** (min/max ที่ยึดอยู่จริง)~~ ✅ เสร็จแล้ว — ทำได้เร็วกว่าคาดเพราะใช้ `Node.min_*`/`max_*` ของ `bevy_ui` ตรงๆ
 4. ~~**F3** (Components panel scrollbar)~~ ✅ เสร็จแล้ว — ต่อ widget จาก F2 เข้ากับ Inspector panel ตามแผน
 5. ~~**F4 ส่วน cursor feedback**~~ ✅ เสร็จแล้ว — เหลือแค่ persist ขนาดข้ามเซสชัน ผูกกับ F5 ด้านล่าง
-6. **F6 ขั้นต่ำ** (`IconRegistry` + วาด icon เดี่ยวได้) — โครงสร้างพื้นฐานที่ F5 ต้องใช้
+6. ~~**F6 ขั้นต่ำ**~~ ✅ เสร็จแล้ว — `IconRegistry` + `spawn_icon` ใช้งานได้จริง (ผ่าน `ImageNode::rect` ไม่ใช่ `TextureAtlas` ตามที่ร่างไว้แต่แรก) แต่ยังไม่ได้ต่อเข้า toolbar/title bar/Scene Tree row จุดไหนเลย รอ F5/toolbar phase เรียกใช้ต่อ
 7. **F5** (docking) — ก้อนใหญ่สุด เสี่ยงบานปลายสุด ทำหลังสุด ตรงกับ Phase 10 เดิมของ DESIGN.md รวม F4 ส่วน persist layout เข้าไปพร้อมกัน
 
 ทุกข้อยังต้องมี headless test ตามหลักการ section 8.1 ของ DESIGN.md (`bv_editor_test_utils`) ไม่ใช่ "ดูด้วยตา" อย่างเดียว — resize/scroll/drag math ทั้งหมดควรแยกเป็น pure function เทสได้แบบไม่พึ่ง ECS ก่อน (ตามแนวทางที่ `resize_value` ใน `splitter.rs` วางไว้แล้ว) แล้วค่อยห่อด้วย system บางๆ ต่อ

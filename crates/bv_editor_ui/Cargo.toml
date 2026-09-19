@@ -14,6 +14,13 @@ bevy_ui = { workspace = true }
 bevy_text = { workspace = true }
 bevy_color = { workspace = true }
 bevy_math = { workspace = true }
+bevy_asset = { workspace = true }
+bevy_image = { workspace = true }
+# Only for `Extent3d`/`TextureDimension`/`TextureFormat` to build the F6
+# built-in icon's procedural sprite sheet (see `icon.rs`) — these are
+# `bevy_image`'s own re-export source, not a rendering dependency, so this
+# stays far lighter than pulling in all of `bevy_render` for three type defs.
+wgpu-types = { version = "29.0.3", default-features = false }
 
 [dev-dependencies]
 bv_editor_test_utils = { workspace = true }
